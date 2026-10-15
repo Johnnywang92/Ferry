@@ -1,0 +1,27 @@
+# M0a spike 用仿真环境。三台服务器分别对应：
+#   atmoz/sftp 主测试环境、现代 OpenSSH 对照组、老算法设备仿真。
+services:
+  sftp-atmoz:
+    image: atmoz/sftp:latest
+    ports: ["2201:22"]
+    volumes:
+      - atmoz-data:/home/tester
+    # user:pass:uid:gid:dir  —— atmoz 约定格式
+    command: ["tester:testpass:1001:1001:upload"]
+
+  sftp-modern:
+    build:
+      context: ./docker/openssh
+    ports: ["2202:22"]
+    environment:
+      SSHD_PROFILE: modern
+
+  sftp-legacy:
+    build:
+      context: ./docker/openssh
+    ports: ["2203:22"]
+    environment:
+      SSHD_PROFILE: legacy
+
+volumes:
+  atmoz-data:

@@ -1,0 +1,60 @@
+import Foundation
+
+/// 路径的权威表示是服务器返回的原始字节。NFC 只用于比较，绝不用于寻址；
+/// 否则 Linux 上并存的 NFC 与 NFD 同形文件会被错误合并成一个。
+public struct RemotePath: Hashable, Sendable {
+    /// 发往服务器的唯一依据；`stat`/`rename`/`remove` 一律使用它。
+    public let wireBytes: [UInt8]
+
+    public let isAbsolute: Bool
+
+    public init(wireBytes: [UInt8], isAbsolute: Bool) {
+        self.wireBytes = wireBytes
+        self.isAbsolute = isAbsolute
+    }
+
+    /// 从 Swift 字符串构造。含 NUL 的路径在 POSIX 下不合法，直接拒绝。
+    public init?(string: String, isAbsolute: Bool) {
+        guard !string.utf8.contains(0) else { return nil }
+        self.wireBytes = Array(string.utf8)
+        self.isAbsolute = isAbsolute
+    }
+
+    /// 仅供展示。非法 UTF-8 以 `\xNN` 呈现，不做有损替换。
+    public func displayString() -> String {
+        if let s = String(data: Data(wireBytes), encoding: .utf8) { return s }
+        return wireBytes.lazy
+            .map { String(format: "\\x%02x", $0) }
+            .joined()
+    }
+}
+
+/// 跨端对齐用的派生键，由 `wireBytes` 经 NFC（及可选大小写折叠）得到。
+/// 永不回写远端。
+public struct ComparisonKey: Hashable, Sendable {
+    public let bytes: [UInt8]
+
+    init(wireBytes: [UInt8], pathPolicy: PathPolicy) {
+        let string = String(decoding: wireBytes, as: UTF8.self)
+        let normalized = pathPolicy.normalizeForCompare
+            ? string.precomposedStringWithCanonicalMapping
+            : string
+        let folded = pathPolicy.caseSensitive ? normalized : normalized.lowercased()
+        self.bytes = Array(folded.utf8)
+    }
+}
+
+/// 大小写与归一化策略属于连接/文件系统，不属于单个路径实例。
+public struct PathPolicy: Sendable {
+    public let caseSensitive: Bool
+    public let normalizeForCompare: Bool
+
+    public init(caseSensitive: Bool, normalizeForCompare: Bool) {
+        self.caseSensitive = caseSensitive
+        self.normalizeForCompare = normalizeForCompare
+    }
+
+    public func key(for path: RemotePath) -> ComparisonKey {
+        ComparisonKey(wireBytes: path.wireBytes, pathPolicy: self)
+    }
+}
