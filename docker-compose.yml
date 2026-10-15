@@ -1,5 +1,9 @@
 # M0a spike 用仿真环境。三台服务器分别对应：
 #   atmoz/sftp 主测试环境、现代 OpenSSH 对照组、老算法设备仿真。
+#
+# 重要：atmoz/sftp 官方镜像只有 linux/amd64，在 arm64 机器上走 Rosetta，
+# 单次 sftp_init 慢约 200 倍（实测 400ms vs 2ms，见 docs/spike/M0a-01）。
+# 它只用于功能与兼容性验证；吞吐、CPU、小文件基准一律用 sftp-modern。
 services:
   sftp-atmoz:
     image: atmoz/sftp:latest
