@@ -1,0 +1,34 @@
+From 71d80766fc298fb4b92570d0349352216fc45665 Mon Sep 17 00:00:00 2001
+From: Viktor Szakats <vszakats@users.noreply.github.com>
+Date: Mon, 29 Jun 2026 19:12:21 +0200
+Subject: [PATCH 10/10] =?UTF-8?q?publickey:=20list=5Ffetch=20=E6=89=A9?=
+ =?UTF-8?q?=E5=AE=B9=E5=90=8E=E6=B8=85=E9=9B=B6=E6=96=B0=E6=9D=A1=E7=9B=AE?=
+ =?UTF-8?q?=EF=BC=8C=E6=9D=9C=E7=BB=9D=20free=20=E6=9C=AA=E5=88=9D?=
+ =?UTF-8?q?=E5=A7=8B=E5=8C=96=E6=8C=87=E9=92=88?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+上游 a9758da45a52bc8c630ec9493804d0c6ea30b24a（GHSA-c5f3-hwj2-xp5p，CVE-2026-58051，PR #2127）
+一行 memset，1.11.1 上下文直接对上，不需要 API 适配。
+提交号同样来自 Homebrew formula，advisory 的 patches 字段是空的。
+影响面：libssh2_publickey_* 我们不调用，与 0009 同因。
+---
+ src/publickey.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/publickey.c b/src/publickey.c
+index e3479719..b83b28df 100644
+--- a/src/publickey.c
++++ b/src/publickey.c
+@@ -972,6 +972,7 @@ libssh2_publickey_list_fetch(LIBSSH2_PUBLICKEY * pkey, unsigned long *num_keys,
+                     goto err_exit;
+                 }
+                 list = newlist;
++                memset(&list[keys], 0, sizeof(list[keys]));
+             }
+             if(pkey->version == 1) {
+                 unsigned long comment_len;
+-- 
+2.37.0
+

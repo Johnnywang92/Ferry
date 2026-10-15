@@ -1,0 +1,40 @@
+From 1b0cd38322b8ace2dd270f71440044996d374da9 Mon Sep 17 00:00:00 2001
+From: Viktor Szakats <commit@vsz.me>
+Date: Sun, 28 Jun 2026 02:12:52 +0200
+Subject: [PATCH 09/10] =?UTF-8?q?publickey:=20list=5Ffetch=20=E7=9A=84=20n?=
+ =?UTF-8?q?um=5Fattrs=20=E5=8A=A0=E4=B8=8A=E7=95=8C=EF=BC=8C=E5=A0=B5?=
+ =?UTF-8?q?=E4=BD=8F=E4=B9=98=E6=B3=95=E6=BA=A2=E5=87=BA?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+上游 34497525929b9a47f03dfb81887ac896202b7e12（GHSA-mf77-5hj2-98w9，CVE-2026-58050）
+advisory 的 patches 字段是空的，提交号是从 Homebrew 的 formula（1.11.1_7 的
+Patches/libssh2/CVE-2026-58050.patch）反查再用 git cat-file 核实出来的——
+"API 说没有 commit"不等于"没有 commit"。
+cherry-pick 上下文能对上，但新增行用了 master 才有的 ssh2_err，
+已改成 1.11.1 的 _libssh2_error（和 0005 同一个坑）。
+影响面：libssh2_publickey_* 这套老子系统我们不调用，打它只为把已知 CVE 清零。
+---
+ src/publickey.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/publickey.c b/src/publickey.c
+index de5b49b2..e3479719 100644
+--- a/src/publickey.c
++++ b/src/publickey.c
+@@ -1121,6 +1121,11 @@ libssh2_publickey_list_fetch(LIBSSH2_PUBLICKEY * pkey, unsigned long *num_keys,
+                 }
+ 
+                 if(list[keys].num_attrs) {
++                    if(list[keys].num_attrs > 1024) {
++                        _libssh2_error(session, LIBSSH2_ERROR_OUT_OF_BOUNDARY,
++                                 "Too many publickey attributes");
++                        goto err_exit;
++                    }
+                     list[keys].attrs =
+                         LIBSSH2_ALLOC(session,
+                                       list[keys].num_attrs *
+-- 
+2.37.0
+

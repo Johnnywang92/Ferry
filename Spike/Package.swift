@@ -1,5 +1,4 @@
 // swift-tools-version: 6.0
-import Foundation
 import PackageDescription
 
 // M0a 技术验证专用，独立可删。这里刻意直接调 libssh2 C API，
@@ -7,29 +6,26 @@ import PackageDescription
 // 唯一的例外是 path 模式：它要用 Core 的 PathResolver 去对服务器的 realpath，
 // 那是"实现 vs 事实"的对照，不是抽象层验证。
 //
-// 链接的是 Homebrew 开发版 libssh2（Sources/CLibssh2/shim.h 里是绝对 include 路径，
-// libssh2.h 与 libssh2_sftp.h 都要包，后者不在前者之内），
-// 且它被 bottle 链到了 OpenSSL 4，不是最终要用的 OpenSSL 3.x。
-// 因此 M0b 换成锁定 commit + 静态 OpenSSL 3.x 的 xcframework 后，
-// spike #4（取消打断）与 #7/#8（API 存在性、私钥解析）必须用正式产物重跑。
-let brewPrefix = ProcessInfo.processInfo.environment["HOMEBREW_PREFIX"] ?? "/opt/homebrew"
-
+// M0b 起链的是 ThirdParty/build-xcframework.sh 的产物（锁定 commit + 静态 OpenSSL 3），
+// 通过 Backends 包复用同一个 CLibssh2 模块——模块名不变，spike 代码无需改动。
+// 换库之前 M0a 的结论不能直接沿用：Homebrew bottle 被链到 OpenSSL 4，
+// 所以 #4（取消打断）、#7/#8（API 存在性与私钥解析）和 path oracle 都要在正式产物上重跑，
+// 重跑结果记在 docs/spike/M0b-* 里。
 let package = Package(
     name: "Spike",
     platforms: [.macOS(.v15)],
     dependencies: [
-        .package(path: "../Packages/Core")
+        .package(path: "../Packages/Core"),
+        .package(path: "../Packages/Backends")
     ],
     targets: [
-        .systemLibrary(name: "CLibssh2", path: "Sources/CLibssh2"),
         .executableTarget(
             name: "SpikeRunner",
-            dependencies: ["CLibssh2", .product(name: "FerryCore", package: "Core")],
-            path: "Sources/SpikeRunner",
-            linkerSettings: [
-                .unsafeFlags(["-L\(brewPrefix)/lib"]),
-                .linkedLibrary("ssh2")
-            ]
+            dependencies: [
+                .product(name: "FerrySSHShim", package: "Backends"),
+                .product(name: "FerryCore", package: "Core")
+            ],
+            path: "Sources/SpikeRunner"
         )
     ]
 )

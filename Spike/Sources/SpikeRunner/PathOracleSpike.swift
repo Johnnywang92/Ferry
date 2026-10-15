@@ -65,7 +65,7 @@ enum PathOracleSpike {
             // 解析失败 = 服务器给出了路径而我们没给，同样是算法分歧，必须算硬失败
             let hardFailures = mismatch + rows.filter { $0.verdict == "解析失败" }.count
             let maxLookups = rows.map(\.lookups).max() ?? 0
-            print("  一致 \(rows.count - hardFailures - skipped)，不一致 \(mismatch)，"
+            print("  一致 \(rows.count - hardFailures - skipped - bothRefused)，不一致 \(mismatch)，"
                   + "解析失败 \(hardFailures - mismatch)，双方都拒绝 \(bothRefused)，仅服务器拒绝 \(skipped)")
             print("  单次解析最多往返 \(maxLookups) 次：同步引擎若逐条目解析路径，成本按条目数乘 RTT")
             exit(hardFailures == 0 ? 0 : 1)
@@ -91,8 +91,15 @@ enum PathOracleSpike {
         let pairs = Dictionary(grouping: mazeSymlinkRcs) { "\($0.rc)/\($0.status)" }
             .map { "\($0.key)×\($0.value.count)" }
             .sorted()
+        // 判据要看数据，不能写死：自编但**未打补丁**的 1.11.1 上 16 条全回 rc=0，
+        // 打上补丁 0008（CVE-2025-15661）后同一段代码全回 -31，Homebrew bottle 也是 -31。
+        // M0b-01 那版在这里写死了"返回码不可信"，在未打补丁的产物上就说反了话。
+        let agreesWithReadback = mazeSymlinkRcs.allSatisfy { $0.rc == 0 && $0.status == 0 }
         print("  迷宫建链 \(mazeSymlinkRcs.count) 条全部回读确认，rc/status 分布："
-              + pairs.joined(separator: " ") + "（返回码不可信，后端要按回读判定成功）")
+              + pairs.joined(separator: " ")
+              + (agreesWithReadback
+                 ? "（返回码与回读一致）"
+                 : "（有回读已建成功但返回码非 0 的条目：后端只能按回读判定成功）"))
         try negativeControl(sftp: sftp, dir: dir)
         // `~` 展开到哪个目录由服务器决定；用 dir 去掉 root 前缀反推，两种目录布局都成立
         var rootPrefix = root

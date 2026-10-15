@@ -1,0 +1,36 @@
+From fc5c40bc74908e7a2957731b2b7bab67bc10776b Mon Sep 17 00:00:00 2001
+From: yifan <yifanwang@mobiomed.com>
+Date: Thu, 15 Oct 2026 15:41:30 +0800
+Subject: [PATCH 01/10] transport: bound-check packet length on the non-ETM
+ partial-read path
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+上游 97acf3dfda80c91c3a8c9f2372546301d4a1a7a8（CVE-2026-55200, GHSA-r8mh-x5qv-7gg2）
+手工适配 1.11.1：此处仍叫 _libssh2_ntohu32（master 上改名 ssh2_ntohu32），逻辑原样搬。
+---
+ src/transport.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/transport.c b/src/transport.c
+index e1120656..d147505b 100644
+--- a/src/transport.c
++++ b/src/transport.c
+@@ -639,8 +639,12 @@ int _libssh2_transport_read(LIBSSH2_SESSION * session)
+                 total_num = 4;
+ 
+                 p->packet_length = _libssh2_ntohu32(block);
+-                if(p->packet_length < 1)
++                if(p->packet_length < 1) {
+                     return LIBSSH2_ERROR_DECRYPT;
++                }
++                else if(p->packet_length > LIBSSH2_PACKET_MAXPAYLOAD) {
++                    return LIBSSH2_ERROR_OUT_OF_BOUNDARY;
++                }
+ 
+                 /* total_num may include size field, however due to existing
+                  * logic it needs to be removed after the entire packet is read
+-- 
+2.37.0
+

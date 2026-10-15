@@ -1,0 +1,32 @@
+From 50d34227b8ced39f46cb160c0d6fd0fa2df3b773 Mon Sep 17 00:00:00 2001
+From: yifan <yifanwang@mobiomed.com>
+Date: Thu, 15 Oct 2026 15:42:14 +0800
+Subject: [PATCH 02/10] =?UTF-8?q?sftp=5Fopen:=20=E9=87=8A=E6=94=BE?=
+ =?UTF-8?q?=E5=90=8E=E7=BD=AE=E7=A9=BA=20data=EF=BC=8C=E9=81=BF=E5=85=8D?=
+ =?UTF-8?q?=E6=82=AC=E5=9E=82=E6=8C=87=E9=92=88=E4=BA=8C=E6=AC=A1=E9=87=8A?=
+ =?UTF-8?q?=E6=94=BE?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+上游 5e4776146552d898b9c0e1b313cd093fa8dc92d0（CVE-2026-66032, GHSA-83r8-6c29-8gwr）
+手工适配 1.11.1：此处仍是 LIBSSH2_FREE（master 改名 SSH2_FREE），只加一行置空。
+---
+ src/sftp.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/sftp.c b/src/sftp.c
+index 6ede3111..793f267c 100644
+--- a/src/sftp.c
++++ b/src/sftp.c
+@@ -1279,6 +1279,7 @@ sftp_open(LIBSSH2_SFTP *sftp, const char *filename,
+                                "got HANDLE FXOK"));
+ 
+                 LIBSSH2_FREE(session, data);
++                data = NULL;
+ 
+                 /* silly situation, but check for a HANDLE */
+                 rc = sftp_packet_require(sftp, SSH_FXP_HANDLE,
+-- 
+2.37.0
+
