@@ -63,6 +63,22 @@ enum SpikeProbe {
         return fd
     }
 
+    /// 只做到握手完成、**不认证**，用于测私钥解析路径（认证才是网络行为）。
+    static func unauthenticatedSession(_ endpoint: Endpoint) throws -> (fd: Int32, session: OpaquePointer) {
+        let fd = try openSocket(endpoint)
+        guard let session = libssh2_session_init_ex(nil, nil, nil, nil) else {
+            close(fd)
+            throw Failure(step: "session_init", code: -1)
+        }
+        let rc = libssh2_session_handshake(session, fd)
+        guard rc == 0 else {
+            libssh2_session_free(session)
+            close(fd)
+            throw Failure(step: "handshake", code: rc)
+        }
+        return (fd, session)
+    }
+
     /// 建立已完成用户认证的 session；调用方负责释放返回的 session 与 fd。
     static func authenticatedSession(_ endpoint: Endpoint) throws -> (fd: Int32, session: OpaquePointer) {
         let fd = try openSocket(endpoint)
