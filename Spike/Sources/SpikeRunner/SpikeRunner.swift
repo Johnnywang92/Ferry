@@ -43,13 +43,26 @@ struct SpikeRunner {
         print("结果：成功 \(opened.count) 个，失败 \(failures.count) 个")
         for sftp in opened { libssh2_sftp_shutdown(sftp) }
         SpikeProbe.shutdown(session: handle, fd: fd)
-        libssh2_exit()
     }
 
     static func main() {
         libssh2_init(0)
+        defer { libssh2_exit() }
         let arguments = CommandLine.arguments
-        let attempts = arguments.count > 1 ? (Int32(arguments[1]) ?? 12) : 12
-        sameSessionMultipleChannels(attempts: attempts)
+        let mode = arguments.count > 1 ? arguments[1] : "throughput"
+        switch mode {
+        case "channels":
+            let attempts = arguments.count > 2 ? (Int32(arguments[2]) ?? 12) : 12
+            sameSessionMultipleChannels(attempts: attempts)
+        case "throughput":
+            ThroughputSpike.run()
+        case "latency":
+            ThroughputSpike.latencyMain()
+        default:
+            print("用法：spike [channels <次数> | throughput | latency]")
+            print("  throughput 可用环境变量 SPIKE_FILE / SPIKE_CHUNK / SPIKE_LEVELS 调整负载")
+            print("  latency 可用环境变量 SPIKE_REQUESTS / SPIKE_REQ_SIZE 调整请求数与大小")
+            exit(2)
+        }
     }
 }

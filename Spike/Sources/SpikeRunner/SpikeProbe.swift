@@ -45,6 +45,14 @@ enum SpikeProbe {
             close(fd)
             throw Failure(step: "connect \(endpoint.host):\(endpoint.port)", code: Int32(errno))
         }
+
+        // spike #2/#3 用：判断单 Session 多 Channel 的天花板究竟是
+        // libssh2 的请求串行化，还是这一条 TCP 自身的接收窗口。
+        if let size = ProcessInfo.processInfo.environment["SPIKE_RCVBUF"], let bytes = Int(size), bytes > 0 {
+            var value = Int32(bytes)
+            setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &value, socklen_t(MemoryLayout<Int32>.size))
+            setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &value, socklen_t(MemoryLayout<Int32>.size))
+        }
         return fd
     }
 

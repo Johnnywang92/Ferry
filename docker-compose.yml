@@ -19,6 +19,9 @@ services:
     ports: ["2202:22"]
     environment:
       SSHD_PROFILE: modern
+    # spike #2/#3 用 tc netem 造出真实 RTT；容器内回环没有延迟，
+    # 并发方案在本地测不出差异（见 docs/spike/M0a-02）。
+    cap_add: [NET_ADMIN]
 
   sftp-legacy:
     build:
