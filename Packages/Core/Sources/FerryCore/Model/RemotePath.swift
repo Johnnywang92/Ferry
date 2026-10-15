@@ -20,12 +20,14 @@ public struct RemotePath: Hashable, Sendable {
         self.isAbsolute = isAbsolute
     }
 
-    /// 仅供展示。非法 UTF-8 以 `\xNN` 呈现，不做有损替换。
+    /// 仅供展示。非法 UTF-8 或含 NUL 时整条以 `\xNN` 呈现，不做有损替换。
     public func displayString() -> String {
-        if let s = String(data: Data(wireBytes), encoding: .utf8) { return s }
-        return wireBytes.lazy
-            .map { String(format: "\\x%02x", $0) }
-            .joined()
+        displayString(using: CharsetConverter(charset: .utf8))
+    }
+
+    /// 按连接所选字符集展示。解码只影响显示，`wireBytes` 一个字节都不动。
+    public func displayString(using converter: CharsetConverter) -> String {
+        converter.displayString(wireBytes)
     }
 }
 
