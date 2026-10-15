@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  发布形态的 entitlements。方案 A（Developer ID + 非沙盒 + Hardened Runtime）下
+  这张表是空的——这正是要测的事实：非沙盒 App 开 Hardened Runtime 不需要任何
+  entitlement 就能跑，我们静态链 libssh2/OpenSSL，library validation 也不用开口子。
+
+  刻意不放的两项，放了就等于把走查结论作废：
+    com.apple.security.cs.disable-library-validation  —— 只有要 dlopen 第三方 dylib 才需要
+                                                        （M6 的 Sparkle 是候选，届时单独判）
+    com.apple.security.app-sandbox                    —— 方案 A 明确不开沙盒
+-->
+<plist version="1.0">
+<dict/>
+</plist>

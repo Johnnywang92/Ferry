@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  调试形态：只多一个 get-task-allow，用来量它和 Hardened Runtime / 公证的相互影响。
+  注意这条 entitlement 会让 Keychain 条目的访问身份变化（cdhash 规则不变，
+  但 Apple 的公证流程要求非调试构建不能带它），别拿调试包的结果当发布结论。
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.get-task-allow</key>
+	<true/>
+</dict>
+</plist>

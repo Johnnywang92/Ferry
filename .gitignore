@@ -10,3 +10,4 @@ ThirdParty/build/
 .env
 # 从 Ferry.html 设计稿 bundle 里剥出来的中间产物，仅本地参考
 .decode/
+App/build/
