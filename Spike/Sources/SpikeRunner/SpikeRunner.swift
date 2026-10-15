@@ -66,10 +66,13 @@ struct SpikeRunner {
             KeySpike.run()
         case "rename":
             RenameSpike.run()
+        case "paths":
+            PathOracleSpike.run()
         default:
-            print("用法：spike [channels <次数> | throughput | latency | cancel | small | keys | rename]")
+            print("用法：spike [channels <次数> | throughput | latency | cancel | small | keys | rename | paths]")
             print("  throughput 可用环境变量 SPIKE_FILE / SPIKE_CHUNK / SPIKE_LEVELS 调整负载")
             print("  latency 可用环境变量 SPIKE_REQUESTS / SPIKE_REQ_SIZE 调整请求数与大小")
+            print("  paths 默认打到 2201（atmoz），用 SPIKE_PORT 换成其它服务器对照")
             exit(2)
         }
     }

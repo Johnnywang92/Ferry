@@ -4,6 +4,8 @@ import PackageDescription
 
 // M0a 技术验证专用，独立可删。这里刻意直接调 libssh2 C API，
 // 不经过 Core 协议抽象——spike 要测的就是底层库本身的行为。
+// 唯一的例外是 path 模式：它要用 Core 的 PathResolver 去对服务器的 realpath，
+// 那是"实现 vs 事实"的对照，不是抽象层验证。
 //
 // 链接的是 Homebrew 开发版 libssh2（Sources/CLibssh2/shim.h 里是绝对 include 路径，
 // libssh2.h 与 libssh2_sftp.h 都要包，后者不在前者之内），
@@ -15,11 +17,14 @@ let brewPrefix = ProcessInfo.processInfo.environment["HOMEBREW_PREFIX"] ?? "/opt
 let package = Package(
     name: "Spike",
     platforms: [.macOS(.v15)],
+    dependencies: [
+        .package(path: "../Packages/Core")
+    ],
     targets: [
         .systemLibrary(name: "CLibssh2", path: "Sources/CLibssh2"),
         .executableTarget(
             name: "SpikeRunner",
-            dependencies: ["CLibssh2"],
+            dependencies: ["CLibssh2", .product(name: "FerryCore", package: "Core")],
             path: "Sources/SpikeRunner",
             linkerSettings: [
                 .unsafeFlags(["-L\(brewPrefix)/lib"]),
