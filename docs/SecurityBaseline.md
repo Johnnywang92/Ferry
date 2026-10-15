@@ -1,0 +1,142 @@
+# SecurityBaseline · 依赖与安全基线
+
+状态：**M0b 骨架**（v2.3 §57 要求的产物）。已核实的内容在下面直接给结论；没核实的一律标 **待核** 并写明怎么核，**不进入结论**。
+最后更新：2026-10-15
+
+---
+
+## 0. 这份文档的口径
+
+- 每条依赖必须齐三样：**版本、钉死的 commit hash、已知 CVE 及其 advisory 链接**。缺链接的条目只能进"待核"列。
+- CVE 原文只认 NVD 或项目 advisory 页；二手博客、扫描器报告不作依据。
+- **advisory 的结构化字段不全 ≠ 没有修复 commit**。这条是被证伪过的教训，见 §4.3。
+- 本文件的"结论"列只在实测或原文核过之后才填；否则填"待核 + 方法"。
+- 依赖变化（升版、增删补丁）时，本文件与 `ThirdParty/versions.env`、`ThirdParty/patches/SHA256SUMS` 必须同批改；`versions.env` 的注释里已经写了这条要求。
+
+---
+
+## 1. 依赖清单
+
+| 依赖 | 版本 | 钉死 commit / sha256 | 来源 | 用途 | 结论 |
+|---|---|---|---|---|---|
+| OpenSSL | `openssl-3.5.9`（3.5 LTS 分支） | `45e844fa2a14ec92d146bd8f5778ac130b6625fb` | `https://github.com/openssl/openssl.git` | libssh2 的 crypto 后端，静态链入 `FerrySSH.a` | 选 3.5 而非 3.6 的理由记在 `versions.env`：3.5 是 LTS（标准支持到 2030-04），3.6 是常规分支（到 2026-11）。**3.5.9 是否为该分支当时最新版：待核**（方法：`https://openssl-library.org/source/` 的 3.5 分支发布列表 + `https://openssl-library.org/news/vulnerabilities/` 逐条比对是否在 3.5.9 之前修复） |
+| libssh2 | tag `libssh2-1.11.1` + 本地 10 条补丁 | 上游 commit `a312b43325e3383c865a87bb1d26cb52e3292641`；补丁集 sha256 `4d8d1f626103cce3445753ddff91296aa15121ea55a3dedc9ce5ac7c88cd6ead`；打完补丁的源码 tree `509f18c918deccf9731d15240b4642dcaf1124d8` | `https://github.com/libssh2/libssh2.git` | SSH/SFTP 协议栈 | **1.11.1 这个 tag 不带任何已知 CVE 修复**，10 条修复全在 master；靠 `ThirdParty/patches` 搬进来，见 §3 |
+| CMake（仅构建期） | `3.31.12` | sha256 `799af7fd545db9bf1b9cfe72f8095880e727a2d4e0df0e3dffc3bc7b95c2d3b0`（官方随附 `cmake-3.31.12-SHA-256.txt`，不是下载后自算） | Kitware 官方 release 归档 | 交叉编译 OpenSSL/libssh2 | 不进产物：脚本下载到 `ThirdParty/build/tools`，不入包、不碰系统 PATH |
+| Swift toolchain / SDK | 本机 Xcode，SDK 27.0，deployment target 15.0 | 未钉 | 本机 | 编译 | **待核**：构建可复现性目前锚在源码三件套（§6），工具链版本只在 `provenance.txt` 里记录不校验 |
+
+架构与产物形态：fat（arm64 + x86_64）静态归档 `FerrySSH.a`（约 21 MB），**运行期不依赖任何第三方动态库**——这条是签名基线的前提，见 §7.1。
+> `build-xcframework.sh` 默认出 arm64+x86_64 双切片（`--arch arm64` 可只出单切片），而 S3 决策是"交付仅 arm64"。两者不冲突但也没对上：留 x86_64 只是脚本默认值，不是安全决定，裁剪与否列 §8 待核 9。
+
+## 2. 已知 CVE：v2.3 §78 列的那几条
+
+v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）。本轮核完 4 条，纠正 1 条：
+
+| CVE | v2.3 的怀疑 | 核实结果 |
+|---|---|---|
+| CVE-2025-15661 | 待核 | **libssh2，已搬**（补丁 0008，GHSA-3wqh-87fg-ffgg，High）。改的是 `sftp_symlink()`，**并且改变了返回值语义**，见 §5 |
+| CVE-2026-7598 | 待核 | **libssh2，已搬**（补丁 0003，GHSA-jhp3-h4hp-2c3p，Medium，`src/userauth.c`，干净搬运） |
+| CVE-2026-55199 | 待核 | **libssh2，已搬**（补丁 0004，GHSA-3cfq-4xx4-rmpg，High，`src/packet.c`） |
+| CVE-2026-55200 | 待核 | **libssh2，已搬**（补丁 0001，GHSA-r8mh-x5qv-7gg2，Critical，`src/transport.c` 的 `ssh2_transport_read()` 越界写）。CVE 记录页摘录（本轮经搜索取得，页面原文未整页取回）为"libssh2 through 1.11.1, fixed in commit 7acf3df … out-of-bounds write in ssh2_transport_read()"⇒ 影响范围含 1.11.1，且是**客户端读服务器包**的路径。**该页把修复 commit 写成 `7acf3df`，这个 sha 在本地 clone 里解析不出**（不是任何对象的前缀），真实 commit 是 `97acf3dfda80…` ⇒ 原文本身就有笔误，不是我们读错（验证方式见 §4.1） |
+| CVE-2026-43798 | 待核，描述可疑 | **不是 libssh2 的**：多个库（NVD 条目、Tenable、Vulners、Strix）一致标为 `swift-nio-ssh`（0.14.1 修复：单条构造的 SSH 消息造成越界栈写）。本项目不用 swift-nio-ssh ⇒ 对本依赖集不适用。**但 CVE 记录页原文本轮没取到（取回被限流），按本文件口径这条仍是待核**（§8 待核 2 覆盖它：开 `https://www.cve.org/CVERecord?id=CVE-2026-43798` 确认产品名与受影响范围后关闭）。**内部佐证**：废弃的 `sftp-client-plan-v2.2.md` §128 当时写的就是"NIO-SSH 漏洞跟踪：必须 `>= 0.14.1`（修复栈越界风险）"——和搜索结论对得上。也就是说 v2.3 §78 标"描述可疑"的那条，成因是 NIO 的需求被混进了 libssh2 的 CVE 清单，不是编号被截断 |
+
+## 3. libssh2 补丁系列（10 条，全量搬运）
+
+清单与手工适配细节的权威版本在 `ThirdParty/patches/README.md`；这里保留可核对的骨架与安全相关字段。等级取各条 advisory 页标注，**CVSS 向量未逐条从 NVD 复核 → 待核**。
+
+| # | 补丁文件（sha 前 12 位为上游 commit） | GHSA | CVE | 等级 | 组件 | 核实状态 |
+|---|---|---|---|---|---|---|
+| 0001 | `0001-97acf3dfda80.patch` | [GHSA-r8mh-x5qv-7gg2](https://github.com/advisories/GHSA-r8mh-x5qv-7gg2) | 2026-55200 | Critical | `src/transport.c` | GHSA↔commit↔CVE 已对齐；NVD 原文 **待核** |
+| 0002 | `0002-5e4776146552.patch` | [GHSA-83r8-6c29-8gwr](https://github.com/advisories/GHSA-83r8-6c29-8gwr) | 2026-66032 | High | `src/sftp.c` | 同上 |
+| 0003 | `0003-256d04b60d80.patch` | [GHSA-jhp3-h4hp-2c3p](https://github.com/advisories/GHSA-jhp3-h4hp-2c3p) | 2026-7598 | Medium | `src/userauth.c` | 同上 |
+| 0004 | `0004-17626857d20b.patch` | [GHSA-3cfq-4xx4-rmpg](https://github.com/advisories/GHSA-3cfq-4xx4-rmpg) | 2026-55199 | High | `src/packet.c` | 同上 |
+| 0005 | `0005-a13bb6c773f0.patch` | [GHSA-6h6q-9mwg-r6x7](https://github.com/advisories/GHSA-6h6q-9mwg-r6x7) | 2026-66034 | High | `src/publickey.c` | 同上（advisory 结构化 `patches` 字段为空，commit 取自正文） |
+| 0006 | `0006-a2ed82d40964.patch` | [GHSA-2g8c-wcg8-r65c](https://github.com/advisories/GHSA-2g8c-wcg8-r65c) | 2026-66033 | High | `src/openssl.c` | 同上（`patches` 字段亦为空） |
+| 0007 | `0007-42e33d81577e.patch` | [GHSA-v6rf-8q4r-r495](https://github.com/advisories/GHSA-v6rf-8q4r-r495) | 2026-66035 | High | `src/transport.c` | 同上 |
+| 0008 | `0008-2dae3024897e.patch` | [GHSA-3wqh-87fg-ffgg](https://github.com/advisories/GHSA-3wqh-87fg-ffgg) | 2025-15661 | High | `src/sftp.c` | 同上，且**行为变更**见 §5 |
+| 0009 | `0009-34497525929b.patch` | [GHSA-mf77-5hj2-98w9](https://github.com/advisories/GHSA-mf77-5hj2-98w9) | 2026-58050 | High | `src/publickey.c` | 同上（曾误判为"无法搬运"，见 §4.3） |
+| 0010 | `0010-a9758da45a52.patch` | [GHSA-c5f3-hwj2-xp5p](https://github.com/advisories/GHSA-c5f3-hwj2-xp5p) | 2026-58051 | High | `src/publickey.c` | 同上 |
+
+搬运的完整性判据（不是"看起来都打了"）：
+
+- `build-xcframework.sh` 先校验 tag 与 commit 一致，再按编号顺序 `git am`，**补丁集哈希变了就强制重编 libssh2**。
+- 头文件没被动过（10 个补丁的 diff 清单里没有 `include/`），所以 API 面与原版 1.11.1 相同；`Spike/Scripts/api-probe.sh` 在打完补丁的产物上仍是**声明 23/25、定义 23/25**，缺的还是 `libssh2_session_set_abort_fn` 与 `libssh2_transport_set_sendsize`。
+- **已知 CVE 清零**这句话只对"这 10 条公告"成立。新公告是否已发布、1.11.2 是否已出：**待核**（方法：`https://github.com/libssh2/libssh2/security/advisories` + OSV `https://osv.dev/list?ecosystem=OSS-Fuzz`/`gh api security-advisories`）。
+- 上游 master 上还有 Homebrew 额外搬的 OSV/fuzz 修复（**不是 CVE**）。本期不搬；要不要搬是 M1 的一个决定，列 §8 待核。
+
+## 4. 核实过程中踩到的坑（写下来是为了下次别照着 advisory 就下结论）
+
+1. **CVE 记录页显示的 commit 可能是错的**：页面写 `7acf3df`，而 `git cat-file -e 7acf3df^{commit}` 在本地 clone 上**解析失败**；真实 commit 是 `97acf3dfda80c91c3a8c9f2372546301d4a1a7a8`（主题 `transport.c: Additional boundary checks for packet …`）。注意 `7acf3df` 是真实 sha 的**中段子串**（偏移 1 起），不是前缀 —— 所以拿它当 abbreviated sha 去查永远查不到，而肉眼看又"像是同一个"。以后按 advisory 页对 commit，先取整页链接指向的完整 sha，别取显示文本。
+2. **tag 是附注标签**：`git ls-remote --tags --refs` 给的是 tag 对象的 sha，checkout 出来的是它指向的 commit，拿前者校验永远报"commit 不符"。正确取法 `git ls-remote <repo> "refs/tags/<tag>^{}"`（已写进 `versions.env` 注释）。
+3. **"API 查不到 commit" ≠ "没有 commit"**：0009/0010 在 GitHub 结构化 `patches` 字段里是空的，早期结论因此写成"这两条无法搬运"——实际存在且能搬。**证伪方式是跨一个独立供应商的清单**：Homebrew `libssh2-1.11.1_7` formula 给这两条分别备了 backport patch 并标 `resolves`。
+4. **"cherry-pick 成功" ≠ "编得过"**：0005、0009 都栽在 master 的助手名（`ssh2_err`）与宏（`LIBSSH2_UNCONST`、`SSH2_SAFEFREE`）在 1.11.1 不存在上。手工适配记在 `patches/README.md` 的"搬到 1.11.1"列。
+5. **判据不能写死**：`spike paths` 曾把"symlink 返回码不可信"写死在代码里，换产物后（未打补丁 vs 打过补丁）结论直接说反话；现在按实测数据打判定。同类教训：M0b-01 的汇总行漏减"双方都拒绝"，把 20 条报成 21 条。
+
+## 5. 补丁带来的行为变更（安全修复的副作用，必须进基线）
+
+`libssh2_sftp_symlink_ex()`：**未打补丁的 1.11.1 建链成功回 `rc=0`；打上 0008（CVE-2025-15661）后成功也回 `rc=-31`，`sftp_last_error` 是 71–134 这类越界值（合法上界 21），而链实际建成了。**
+
+- 实测范围：2201（atmoz chroot）/2202（Debian openssh）/2203 三台、16 条用例，判定分布一致，可复现。
+- 后端约束：**建链不能信返回码，必须 `lstat` + `readlink` 回读判定**（`ErrorTaxonomy` 已按这条实现：越界 status 不判成协议违规，否则每次成功建链都会杀掉会话）。
+- 这不是回归：越界读修掉之后，原来"碰巧读到 0"的路径改成报错，属预期副作用。
+- 换产物必须重测这一条（M0b-03 就是这么翻出来 0008 的语义影响的）。
+
+## 6. 产物完整性与可复现性
+
+- **可复现性锚在源码三件套**，不是产物哈希：tag+commit / 补丁集 sha256 / 打完补丁的源码 tree hash（值见 §1）。实测 `libtool -static` 会给归档成员写当下时间戳，同源码连跑三次 `FerrySSH.a` 哈希都不同 ⇒ `provenance.txt` 里那个 `b5791d13…` 只是**本次构建实例的 ID**，不能当校验和用，也不能用来判"两次构建等价"。
+- 校验位置：`Packages/Backends/Vendor/provenance.txt`（构建时间、主机、SDK、三件套、cmake 哈希、产物大小）。
+- **旧二进制风险**（真实事故，不是假想）：SwiftPM 的 `--build-path` 与既有 `buildPath` 配置叠加后，新产物落在 `.build/out/out`，执行的却是旧文件，导致一整轮"补丁版复测"实际跑在未打补丁的库上。防线是 `Spike/Scripts/verify-linkage.sh`：**拿补丁独有的字符串字面量比对 vendor 归档与二进制**（`ListFetch data too short` ← 0005、`username_len out out of bounds` ← 0001、`Too many publickey attributes` ← 0009），比内容不比时间。
+- 产物不入库（`Vendor/` 已 gitignore），**构建脚本是唯一可信来源**。任何"我本地这份对不对"的问题以 `provenance.txt` + `verify-linkage.sh` 为准。
+
+## 7. 运行时安全基线（签名 / Hardened Runtime / 凭据）
+
+来自 `docs/spike/M0b-04-签名与Hardened-Runtime走查.md` 的实测，全部在 ad-hoc + HR、macOS 26.6.2（25G83）、`spctl --status` = assessments enabled 下测得。
+
+### 7.1 签名
+
+- 逐层由内向外签名，**不使用 `--deep`**；当前产物嵌套代码 0 个，循环空转。
+- `App/Support/Ferry.entitlements` **必须是空 `<dict/>`**：文件里明确禁止提前加 `com.apple.security.cs.disable-library-validation` 与 `com.apple.security.app-sandbox`。加例外要有本节级别的实测理由，不接受"以后可能要"。
+- HR 下 library validation 拦的是 **Team ID，不是文件位置**：第三方 dylib 复制进 bundle 并由内向外重新 ad-hoc 签名后 `dlopen` 仍被拒。⇒ 静态链接是当前唯一能装第三方代码进可运行产物的形状；任何 dylib 化依赖（典型：Sparkle）都需要先做一次"要不要开 `disable-library-validation`"的显式决定。
+- DYLD 注入需要**两个**开关：只开 `allow-dyld-environment-variables` 仍被挡（注入体过不了 library validation），再加 `disable-library-validation` 才成功；`get-task-allow` 对此无用。
+- `--timestamp` 不能对 ad-hoc 用（拿不到 secure timestamp），脚本只在有真身份时加。
+
+### 7.2 凭据存储（M2 开工前必须先定）
+
+| 路径 | ad-hoc 下的实测 | 影响 |
+|---|---|---|
+| 登录钥匙串（file-based，`kSecUseDataProtectionKeychain=false`） | 读写通；换 cdhash / 换 entitlements / 换签名 Identifier / 脱离 bundle 四种身份变化后**都能读回同一条目** | 能用，但没有数据保护类，条目会随登录钥匙串被备份/迁移带走 |
+| data-protection 钥匙串 | 一律 `err -34018`（errSecMissingEntitlement）；**补 `keychain-access-groups` 后签名能吃下这个 entitlement，但进程在 exec 阶段被 SIGKILL（rc=137，无输出、无崩溃报告）** | ad-hoc 阶段无解。要用它就必须有真实签名身份（`Apple Development`/`Developer ID`） |
+
+⇒ "重建后 Keychain 条目失效"这个担心在登录钥匙串这条路**没被观察到**；真正卡住的是 data-protection 完全不可用。两种活路都要在 M2 前选，选完 §8 待核 3 才能闭合。
+
+### 7.3 分发（本期不可验证）
+
+- 本机 `spctl --assess` 对 ad-hoc+HR 产物报 **rejected**，但带隔离位的**新副本** `open` 直接跑起来（flag 值 `0002/0081/0083/0181`、两个从未启动过的 bundle id 都试过）。
+- 对照组：同一份产物**去掉签名** + 隔离位 → `open` 失败（launchd spawn failed，POSIX 163），说明隔离位与签名检查确实在工作 ⇒ 被绕过的是 Gatekeeper 的"未识别开发者"这一层，本机测不出真实分发体验。
+- 本期按 ADR-0000 §5 走 GitHub Releases + Pages，**README 必须附未公证产物的 Gatekeeper 放行说明**；真实体验在 M6 前用干净机器/VM 复测。
+
+### 7.4 网络与协议面（占位，M1' 填）
+
+- 主机密钥校验策略、首次连接 TOFU 还是已知主机库：**待 M1' 定**，记到本节。
+- 弱算法（S6：CBC、`ssh-rsa`/`ssh-dss`、`hmac-sha1`、DH-SHA1）白名单 + "允许弱算法"UI 开关 → 实测矩阵写 `docs/AlgorithmMatrix.md`（M1' 产出，本文件只放指针）。
+- FTP/FTPS 的 TLS 校验与明文传输风险：**未开工**，本节留空。
+- 代理 / ProxyJump 的信任链变化：v1.1+ 范围，暂不适用。
+
+## 8. 待核清单
+
+| # | 项 | 方法 | 阻塞什么 |
+|---|---|---|---|
+| 1 | OpenSSL 3.5.9 是否仍是 3.5 LTS 最新，且 3.5.x 公告是否全部已含 | `openssl-library.org/source/` + `news/vulnerabilities/` 逐条比对修复版本 | M6 前的依赖刷新 |
+| 2 | 10 条 CVE 的 NVD 原文（CVSS 向量、受影响版本范围、是否影响**客户端**侧） | 逐条开 NVD 页；GHSA 页已对齐 commit，但等级只取了 advisory 页标注 | 风险排序、Release Notes 的安全段落 |
+| 3 | libssh2 是否有更新 tag / 新公告 | `github.com/libssh2/libssh2/security/advisories`、`gh api /repos/libssh2/libssh2/security/advisories`、OSV | 补丁系列是否要重做 |
+| 4 | Homebrew 额外搬的 OSV/fuzz 修复是否纳入 | 与 `libssh2.rb` formula 对账 | M1 决定 |
+| 5 | 真实 Gatekeeper 体验（未公证） | 干净机器/VM 上贴 `0081` 隔离位跑 M0b-04 §4 那张表 | M6 发布说明 |
+| 6 | 登录钥匙串条目的 ACL 实际形状 | `security dump-keychain -a`（逐条弹窗）或非 ad-hoc 身份交叉读取 | §7.2 的"未绑定"目前是行为推断 |
+| 7 | 真身份下 data-protection 钥匙串是否可用 | 需要 `Apple Development` 身份 + 用户钥匙串私钥授权 | M2 凭据方案 |
+| 8 | 构建工具链版本对产物的影响 | 目前只在 provenance 记录不校验 | 长期可复现性 |
+| 9 | x86_64 切片是否保留 | 与 S3"仅 arm64"对齐的产物裁剪决定 | 包体大小、签名走查覆盖面 |
+
+## 9. 变更记录
+
+| 日期 | 内容 |
+|---|---|
+| 2026-10-15 | 建骨架。钉版三件套落地（OpenSSL 3.5.9 / libssh2 1.11.1 + 10 补丁 / cmake 3.31.12）；v2.3 §78 的 5 条"待核"关掉 4 条、纠正 1 条（CVE-2026-43798 属 swift-nio-ssh，对本依赖集不适用）；补 M0b-04 的签名/HR/Keychain 实测基线 |
