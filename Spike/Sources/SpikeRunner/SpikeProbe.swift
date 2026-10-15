@@ -46,6 +46,13 @@ enum SpikeProbe {
             throw Failure(step: "connect \(endpoint.host):\(endpoint.port)", code: Int32(errno))
         }
 
+        // spike #4/#5 用：libssh2 的 session_set_blocking(0) 是否自己把套接字
+        // 置成非阻塞，直接决定 poll 边界能不能按时拿到取消信号。
+        if ProcessInfo.processInfo.environment["SPIKE_NONBLOCK_SOCKET"] == "1" {
+            let flags = fcntl(fd, F_GETFL, 0)
+            fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+        }
+
         // spike #2/#3 用：判断单 Session 多 Channel 的天花板究竟是
         // libssh2 的请求串行化，还是这一条 TCP 自身的接收窗口。
         if let size = ProcessInfo.processInfo.environment["SPIKE_RCVBUF"], let bytes = Int(size), bytes > 0 {

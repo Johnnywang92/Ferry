@@ -58,8 +58,10 @@ struct SpikeRunner {
             ThroughputSpike.run()
         case "latency":
             ThroughputSpike.latencyMain()
+        case "cancel":
+            CancelSpike.run()
         default:
-            print("用法：spike [channels <次数> | throughput | latency]")
+            print("用法：spike [channels <次数> | throughput | latency | cancel]")
             print("  throughput 可用环境变量 SPIKE_FILE / SPIKE_CHUNK / SPIKE_LEVELS 调整负载")
             print("  latency 可用环境变量 SPIKE_REQUESTS / SPIKE_REQ_SIZE 调整请求数与大小")
             exit(2)

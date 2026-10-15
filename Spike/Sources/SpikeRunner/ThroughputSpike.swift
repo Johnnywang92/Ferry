@@ -31,6 +31,9 @@ enum ThroughputSpike {
         var bytes: Int64 = 0
         var calls: Int = 0
         var maxChunk: Int = 0
+        var eagain: Int = 0
+        var polls: Int = 0
+        var pollTimeouts: Int = 0
     }
 
     final class FailureBox: @unchecked Sendable {
@@ -119,9 +122,39 @@ enum ThroughputSpike {
         }
     }
 
+    /// 取消标志：主线程置位，poll 循环在边界处自查。
+    final class CancelFlag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var set = false
+        var setAt: Date?
+
+        func request() {
+            lock.lock(); defer { lock.unlock() }
+            guard !set else { return }
+            set = true
+            setAt = Date()
+        }
+
+        var isSet: Bool {
+            lock.lock(); defer { lock.unlock() }
+            return set
+        }
+    }
+
+    struct Cancellation: Error {
+        let phase: String
+        let bytesSoFar: Int64
+        /// 循环真正离开的那一刻。之后还要关 handle / channel，
+        /// 那部分同样是阻塞往返，必须和"取消响应"分开计。
+        let exitAt: Date
+    }
+
     static func runMultiplexed(connection: Connection, path: String, totalBytes: Int64,
                                channels: Int, handlesPerChannel: Int,
-                               chunk: Int, counter: Counter, serial: Bool = false) throws {
+                               chunk: Int, counter: Counter, serial: Bool = false,
+                               cancel: CancelFlag? = nil, pollTimeoutMs: Int = 5000,
+                               parked: CancelFlag? = nil,
+                               abortOnCancel: Bool = false) throws {
         let session = connection.session
         let fanout = channels * handlesPerChannel
 
@@ -162,6 +195,13 @@ enum ThroughputSpike {
         var active = pendings.count
         var stalled = 0
         while active > 0 {
+            if cancel?.isSet == true {
+                libssh2_session_set_blocking(session, 1)
+                // abortOnCancel=true：故意不做体面关闭，交给调用方 shutdown + session_free。
+                // 这些 handle/sftp 会随 session 一起消失，spike 里允许泄漏。
+                if abortOnCancel { pendings.removeAll(); sftps.removeAll() }
+                throw Cancellation(phase: "循环顶部", bytesSoFar: counter.bytes, exitAt: Date())
+            }
             var progressed = false
             // serial=true 是对照组：同一个 channel 上只允许一个未完成请求，
             // 用来判定 C 的失败究竟来自"多 handle"还是"并发请求"。
@@ -169,7 +209,7 @@ enum ThroughputSpike {
             for (index, pending) in pendings.enumerated() where pending.remaining > 0 {
                 if serial, index != gate { continue }
                 let n = libssh2_sftp_read(pending.handle, buffer, chunk)
-                if n == Int(LIBSSH2_ERROR_EAGAIN) { continue }
+                if n == Int(LIBSSH2_ERROR_EAGAIN) { counter.eagain += 1; continue }
                 if n < 0 {
                     let others = pendings.enumerated()
                         .map { "#\($0.offset) 已读\($0.element.received) 待读\($0.element.remaining)" }
@@ -198,8 +238,19 @@ enum ThroughputSpike {
             if directions & LIBSSH2_SESSION_BLOCK_INBOUND != 0 { events |= Int16(POLLIN) }
             if directions & LIBSSH2_SESSION_BLOCK_OUTBOUND != 0 { events |= Int16(POLLOUT) }
             var descriptor = pollfd(fd: connection.fd, events: events, revents: 0)
-            let rc = withUnsafeMutablePointer(to: &descriptor) { poll($0, 1, 5000) }
-            if rc > 0 {
+            // 进入等待前发信号：取消实验要区分"卡在建阶段"和"卡在 poll 边界"
+            counter.polls += 1
+            parked?.request()
+            let rc = withUnsafeMutablePointer(to: &descriptor) { poll($0, 1, Int32(pollTimeoutMs)) }
+            if rc == 0 {
+                counter.pollTimeouts += 1
+                // 超时是正常事件，也是取消检查点：poll 最多睡 pollTimeoutMs
+                if cancel?.isSet == true {
+                    libssh2_session_set_blocking(session, 1)
+                    if abortOnCancel { pendings.removeAll(); sftps.removeAll() }
+                    throw Cancellation(phase: "poll超时", bytesSoFar: counter.bytes, exitAt: Date())
+                }
+            } else if rc > 0 {
                 stalled = 0
             } else {
                 stalled += 1
