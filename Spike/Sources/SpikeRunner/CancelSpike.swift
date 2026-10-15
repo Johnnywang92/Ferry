@@ -51,6 +51,13 @@ enum CancelSpike {
             } catch {
                 print("  阻塞打断失败：\(error)")
             }
+            let idleChannels = Int(env["SPIKE_COLLATERAL_CHANNELS"] ?? "") ?? 3
+            do {
+                try measureCollateral(endpoint: endpoint, path: path, chunk: chunk,
+                                      settle: settle, channels: idleChannels)
+            } catch {
+                print("  连带失败实验失败：\(error)")
+            }
         }
     }
 
@@ -181,5 +188,71 @@ enum CancelSpike {
         let free = Date().timeIntervalSince(freeStart) * 1000
         close(fd)
         print(String(format: "  打断后 disconnect %.1f ms，session_free %.1f ms", disconnect, free))
+    }
+
+    // MARK: - #5b 打断的连带损失：同 session 其他 channel
+
+    /// 验收标准原文是"量化同 session 的其他 channel 一起失败的代价"。
+    /// 这里先开 N 条空闲 channel，再让第 N+1 条卡在阻塞读里，然后 shutdown socket，
+    /// 看空闲 channel 多久失败、能不能只损失那一条。
+    static func measureCollateral(endpoint: SpikeProbe.Endpoint, path: String, chunk: Int,
+                                  settle: Double, channels: Int) throws {
+        let (fd, session) = try SpikeProbe.authenticatedSession(endpoint)
+        let connection = ThroughputSpike.Connection(fd: fd, session: session)
+
+        var sftps: [OpaquePointer] = []
+        for _ in 0..<channels {
+            guard let sftp = libssh2_sftp_init(session) else {
+                throw ThroughputSpike.Failure(step: "sftp_init",
+                                              detail: ThroughputSpike.lastSessionError(session))
+            }
+            sftps.append(sftp)
+        }
+        let aliveBefore = sftps.filter { probeStat($0, path) != nil }.count
+
+        let counter = ThroughputSpike.Counter()
+        let done = DispatchSemaphore(value: 0)
+        let box = TimingBox()
+        DispatchQueue(label: "spike.collateral").async {
+            do {
+                // readRangeBlocking 自己再开一条 channel，即"正在传数据的那条"
+                try ThroughputSpike.readRangeBlocking(connection: connection, path: path,
+                                                      offset: 0, length: 8 * 1024 * 1024,
+                                                      chunk: chunk, counter: counter)
+                box.errorText = "传输 channel 自己读完了"
+            } catch {
+                box.errorText = "传输 channel 被打断：\(error)"
+            }
+            box.threadReturnAt = Date()
+            done.signal()
+        }
+
+        Thread.sleep(forTimeInterval: settle)
+        let shutdownStart = Date()
+        let rc = shutdown(fd, SHUT_RDWR)
+        done.wait()
+        let unblock = (box.threadReturnAt ?? shutdownStart).timeIntervalSince(shutdownStart) * 1000
+
+        let probeStart = Date()
+        let aliveAfter = sftps.dropFirst().filter { probeStat($0, path) != nil }.count
+        let probeCost = Date().timeIntervalSince(probeStart) * 1000
+
+        print(String(format: "  [%d 空闲channel] shutdown rc=%d，传输channel %6.1f ms 内返回；空闲channel 打断前可用 %d 个，打断后剩 %d 个，逐个探测共 %.1f ms",
+                     channels, rc, unblock, aliveBefore, aliveAfter, probeCost))
+        print("      \(box.errorText ?? "")")
+
+        let teardownStart = Date()
+        libssh2_session_free(session)
+        let free = Date().timeIntervalSince(teardownStart) * 1000
+        close(fd)
+        print(String(format: "      直接 session_free（不发 disconnect）%.1f ms", free))
+    }
+
+    static func probeStat(_ sftp: OpaquePointer, _ path: String) -> Int64? {
+        var attrs = LIBSSH2_SFTP_ATTRIBUTES()
+        let rc = path.withCString { pointer in
+            libssh2_sftp_stat_ex(sftp, pointer, UInt32(strlen(pointer)), LIBSSH2_SFTP_STAT, &attrs)
+        }
+        return rc == 0 ? Int64(attrs.filesize) : nil
     }
 }
