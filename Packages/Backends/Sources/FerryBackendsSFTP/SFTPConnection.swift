@@ -10,27 +10,48 @@ enum Libssh2 {
     static let status: Int32 = libssh2_init(0)
 }
 
-/// 一条 SFTP 连接的握手部分：TCP → 算法偏好 → 密钥交换 → 主机密钥信任判定。
+/// 一条 SFTP 连接：TCP → 算法偏好 → 密钥交换 → 主机密钥信任判定 → 认证。
 ///
 /// 线程模型直接来自 ADR-0001 D7：actor 绑在自己那条 `SessionExecutor` 上，
 /// 于是 fd、`LIBSSH2_SESSION *` 和计时都是 actor 隔离状态，一把锁都不用加；
 /// 唯一 `nonisolated` 的是取消标志，它必须能从 UI 线程立刻置位（D3）。
 ///
-/// 认证在 M1'-4 接进来，`sftp_init` 与文件系统操作在 M1'-5。
+/// 认证的实现整体在 `SFTPAuthentication.swift`。`sftp_init` 与文件系统操作在 M1'-5。
 public actor SFTPConnection: RemoteConnection {
     nonisolated private let executor: SessionExecutor
-    nonisolated private let request: ConnectionRequest
     nonisolated private let hostKeyTrust: any HostKeyTrust
-    nonisolated private let cancelFlag = CancellationFlag()
 
-    private var state: ConnectionPhase = .idle
-    private var fd: Int32 = -1
-    private var session: OpaquePointer?
-    private var negotiated: NegotiatedSession?
-    private var loopStats = LoopStats()
-    private var elapsedMs: Int64 = 0
+    // 下面这些是 internal 而不是 private：认证在 `SFTPAuthentication.swift` 的 extension
+    // 里实现，而 Swift 的 `private` 是文件作用域。对外仍是 `public actor` 的黑盒，
+    // 模块外看不见这些状态。
+    nonisolated let request: ConnectionRequest
+    nonisolated let cancelFlag = CancellationFlag()
+
+    var state: ConnectionPhase = .idle
+    var fd: Int32 = -1
+    var session: OpaquePointer?
+    var negotiated: NegotiatedSession?
+    var authenticated: AuthenticatedSession?
+    /// 认证前那次 `none` 探测拿到的服务器清单，缓存下来给重试复用。
+    ///
+    /// 复用的理由是一个数：`libssh2_userauth_list` 每调一次就发一条
+    /// `USERAUTH_REQUEST(method=none)`，服务器上照记一次尝试（M1-04 §1.4 实测：
+    /// 连续只调它，第 7 次被 `MaxAuthTries 6` 踢掉）。认证失败不拆会话，可如果每次重试
+    /// 都再探一次，一轮就要烧掉服务器两格——实测同一条 2202 连接只能容错 3 次口令，
+    /// 缓存之后是 5 次（M1-04 §2.3）。
+    /// 敢复用是因为实测五台在失败之后重新列出来的清单与首次一字不差。
+    var offeredMethods: [String]?
+    var loopStats = LoopStats()
+    var elapsedMs: Int64 = 0
+    var authElapsedMs: Int64 = 0
+    var authAttempts = 0
     /// D7 的可证伪版本：握手的每一步都往这里记线程号，测试断言它只有一个元素。
-    private var visitedThreads: Set<UInt64> = []
+    var visitedThreads: Set<UInt64> = []
+    /// 挂在 `session->abstract` 上的那份上下文。libssh2 交给 keyboard-interactive
+    /// 回调的唯一通道是 `&session->abstract`，而回调参数里没有 session 指针
+    /// （userauth.c:452），所以连接级的东西只能放这儿。引用在 `init_ex` 时 +1、
+    /// `releaseSession()` 时 -1，两边都在 session 线程上，不会漏也不会重。
+    var context: SessionContext?
 
     public init(request: ConnectionRequest, hostKeyTrust: any HostKeyTrust) {
         self.request = request
@@ -50,13 +71,19 @@ public actor SFTPConnection: RemoteConnection {
 
     public var phase: ConnectionPhase { state }
 
-    /// 握手的实测数据，给测试和诊断报告用。
+    /// 握手与认证的实测数据，给测试和诊断报告用。
     public struct Measure: Sendable, Hashable {
         public let elapsedMs: Int64
         public let eagainCount: Int
         public let pollCount: Int
         public let pollTimeoutCount: Int
         public let executorThreads: [UInt64]
+        /// 认证累计用时。keyboard-interactive 等用户答题的时间也算在里面——
+        /// 这一格是"这次连接一共花了多久"，预算判定不看它。
+        public let authElapsedMs: Int64
+        /// 在这条连接上发起过多少次认证尝试（含失败的）。`MaxAuthTries` 就是这么烧掉的，
+        /// 诊断报告要能回答"用户说没连上，服务器那边其实被试了几次"。
+        public let authAttempts: Int
     }
 
     public var measure: Measure {
@@ -64,15 +91,18 @@ public actor SFTPConnection: RemoteConnection {
                 eagainCount: loopStats.eagain,
                 pollCount: loopStats.polls,
                 pollTimeoutCount: loopStats.pollTimeouts,
-                executorThreads: visitedThreads.sorted())
+                executorThreads: visitedThreads.sorted(),
+                authElapsedMs: authElapsedMs,
+                authAttempts: authAttempts)
     }
 
     public func handshake() async throws -> NegotiatedSession {
         switch state {
         case .idle:
             break
-        case .ready:
+        case .ready, .authenticated:
             // 幂等：重入拿到的是同一份事实，不会二次握手。
+            // `.authenticated` 也走这里：认证完成之后传输层早就谈好了，不该再谈一次。
             guard let negotiated else {
                 throw RemoteError.protocolViolation("phase=ready 但没有握手结果")
             }
@@ -115,11 +145,18 @@ public actor SFTPConnection: RemoteConnection {
                                    stats: loopStats).fd
         visitedThreads.insert(currentThreadID())
 
-        guard let newSession = libssh2_session_init_ex(nil, nil, nil, nil) else {
+        // 第 4 个参数落在 `session->abstract` 上：libssh2 交给 keyboard-interactive
+        // 回调的连接级通道只有这一条（它给回调的是 `&session->abstract`，参数里没有 session 指针）。
+        // 这里 +1，配对的 -1 在 `releaseSession()`。
+        let box = SessionContext(endpoint: request.endpoint, cancel: cancelFlag)
+        guard let newSession = libssh2_session_init_ex(nil, nil, nil,
+                                                      Unmanaged.passRetained(box).toOpaque()) else {
+            Unmanaged<SessionContext>.passUnretained(box).release()
             throw RemoteError.operationFailed(OperationFailure(
                 kind: .sessionCode(-1), operation: .handshake, path: nil, rc: -1))
         }
         session = newSession
+        context = box
 
         // 非阻塞必须在 handshake 之前设：D5 说的就是"建阶段也得能按时取消"。
         libssh2_session_set_blocking(newSession, 0)
@@ -217,7 +254,7 @@ public actor SFTPConnection: RemoteConnection {
         switch state {
         case .idle:
             state = .closed
-        case .connecting, .ready:
+        case .connecting, .ready, .authenticated:
             disconnectOrderly()
             releaseSession()
             state = .closed
@@ -238,7 +275,8 @@ public actor SFTPConnection: RemoteConnection {
 
     /// 取消/失败收尾：`shutdown(SHUT_RDWR)` → `session_free` → `close`，
     /// 不发任何协议包、不等任何响应（ADR-0001 D4，实测 8.05 s → 0.20 s）。
-    private func hardTeardown() {
+    /// internal 的理由同上面那批状态：认证在另一个文件的 extension 里也要用它。
+    func hardTeardown() {
         if fd >= 0 {
             shutdown(fd, SHUT_RDWR)
             Darwin.close(fd)
@@ -255,6 +293,12 @@ public actor SFTPConnection: RemoteConnection {
         if fd >= 0 {
             Darwin.close(fd)
             fd = -1
+        }
+        // session 已经不认得这块上下文了，配对 `performHandshake` 里的那次 +1。
+        // 顺序要紧：`libssh2_session_free` 之后回调不可能再被调到，才敢放。
+        if let context {
+            self.context = nil
+            Unmanaged<SessionContext>.passUnretained(context).release()
         }
     }
 }

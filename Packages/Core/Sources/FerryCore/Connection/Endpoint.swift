@@ -26,18 +26,24 @@ public struct ConnectionPolicy: Sendable, Hashable {
     public var connectTimeout: Duration
     /// 密钥交换的上限。老设备常在几百毫秒内回 banner 却把 kex 拖到十几秒。
     public var handshakeTimeout: Duration
+    /// 一次认证尝试的上限。keyboard-interactive 等用户答题的时间**不算在内**
+    /// （后端每次网络往返单独计），否则用户找验证码的 40 秒会被判成网络故障。
+    public var authenticationTimeout: Duration
     /// 算法偏好。全部为空表示"用 libssh2 的默认顺序"。
     public var algorithms: AlgorithmPreferences
 
-    public init(connectTimeout: Duration, handshakeTimeout: Duration, algorithms: AlgorithmPreferences) {
+    public init(connectTimeout: Duration, handshakeTimeout: Duration,
+                authenticationTimeout: Duration, algorithms: AlgorithmPreferences) {
         self.connectTimeout = connectTimeout
         self.handshakeTimeout = handshakeTimeout
+        self.authenticationTimeout = authenticationTimeout
         self.algorithms = algorithms
     }
 
     public static let standard = ConnectionPolicy(
         connectTimeout: .seconds(10),
         handshakeTimeout: .seconds(30),
+        authenticationTimeout: .seconds(30),
         algorithms: .libraryDefault
     )
 }

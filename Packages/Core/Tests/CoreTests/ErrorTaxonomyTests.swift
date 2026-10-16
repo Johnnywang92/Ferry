@@ -143,7 +143,18 @@ func fileCodeDoesNotImplyPassphrase() {
     #expect(ErrorTaxonomy.classifyAuth(rc: -18, method: .plainKey) == .auth(.keyRejected))
     #expect(ErrorTaxonomy.classifyAuth(rc: 0, method: .password) == nil)
     #expect(ErrorTaxonomy.classifyAuth(rc: -13, method: .password) == nil)  // 网络层的事不归这里
-    #expect(ErrorTaxonomy.classifyAuth(rc: -18, method: .password)?.isFatalToSession == true)
+    // -48 与 -16 共用同一件事实（私钥解密这一步失败了），所以分格依据也得是"带没带口令"。
+    // 这一枚在我们这份产物里两条公共入口都到不了（调用方把非 0 一律换成 -16，M1-04 §3.2），
+    // 留着是换 crypto 后端时的兜底：那时它回来，含义仍是这两件事。
+    #expect(ErrorTaxonomy.classifyAuth(rc: -48, method: .encryptedKey) == .auth(.passphraseIncorrect))
+    #expect(ErrorTaxonomy.classifyAuth(rc: -48, method: .encryptedKeyWithoutPassphrase) == .auth(.passphraseRequired))
+    #expect(ErrorTaxonomy.classifyAuth(rc: -48, method: .plainKey) == .auth(.keyRejected))
+    // -39 只有 agent 那条路上是"本机没有可用的 agent"，别的调用点拿到它是 API 用错，
+    // 交给会话层去判，不许伪装成服务器给的结论。
+    #expect(ErrorTaxonomy.classifyAuth(rc: -39, method: .agent) == .auth(.agentUnavailable))
+    #expect(ErrorTaxonomy.classifyAuth(rc: -39, method: .password) == nil)
+    // 口令错不报废传输连接：换个口令再试是同一条 session 上的第二次 USERAUTH_REQUEST
+    #expect(ErrorTaxonomy.classifyAuth(rc: -18, method: .password)?.isFatalToSession == false)
 }
 
 @Test("FTP 的 550 一字多用，永远不据此判定文件不存在")
@@ -182,6 +193,6 @@ func onlyNetworkRetries() {
         #expect(error.isRetryable == wantsRetry, "\(error.diagnosticCode) 的重试分类跑偏")
     }
     #expect(all.filter(\.isFatalToSession).map(\.diagnosticCode)
-            == ["auth/badPassword", "hostKeyMismatch", "protocolViolation"])
+            == ["hostKeyMismatch", "protocolViolation"])
     #expect(all.map(\.diagnosticCode).count == Set(all.map(\.diagnosticCode)).count)
 }

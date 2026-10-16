@@ -103,7 +103,8 @@ private func request(port: Int, policy: ConnectionPolicy = .standard,
 }
 
 private func policy(handshakeTimeout: Duration, algorithms: AlgorithmPreferences = .libraryDefault) -> ConnectionPolicy {
-    ConnectionPolicy(connectTimeout: .seconds(5), handshakeTimeout: handshakeTimeout, algorithms: algorithms)
+    ConnectionPolicy(connectTimeout: .seconds(5), handshakeTimeout: handshakeTimeout,
+                     authenticationTimeout: .seconds(30), algorithms: algorithms)
 }
 
 private func elapsed(_ start: DispatchTime, _ end: DispatchTime = DispatchTime.now()) -> Int {

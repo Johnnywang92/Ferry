@@ -36,7 +36,7 @@ func errorTaxonomy() {
     #expect(RemoteError.network(.timeout).isRetryable)
     #expect(!RemoteError.notFound(path: RemotePath(wireBytes: [0x2f], isAbsolute: true)).isRetryable)
     #expect(!RemoteError.permissionDenied(path: RemotePath(wireBytes: [0x2f], isAbsolute: true)).isRetryable)
-    #expect(RemoteError.auth(.badPassword).isFatalToSession)
+    #expect(!RemoteError.auth(.badPassword).isFatalToSession)
     #expect(RemoteError.hostKeyMismatch(fingerprint: "SHA256:x").isFatalToSession)
     #expect(!RemoteError.network(.connectionLost).isFatalToSession)
 }

@@ -140,6 +140,7 @@ private func request(port: Int, algorithms: AlgorithmPreferences) -> ConnectionR
                       authentication: .password("this-test-never-authenticates"),
                       policy: ConnectionPolicy(connectTimeout: .seconds(10),
                                                handshakeTimeout: .seconds(30),
+                                               authenticationTimeout: .seconds(30),
                                                algorithms: algorithms))
 }
 

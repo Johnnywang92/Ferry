@@ -42,9 +42,15 @@ struct SessionLoop {
     }
 
     /// `deadlineMs` 从进入本次调用起算；nil 表示不设总时限，只受取消控制。
+    ///
+    /// `pausedMs` 累计"不该算进预算"的毫秒数。只有 keyboard-interactive 用得上：
+    /// 回调里等用户答题的那段时间发生在 `call()` 内部，算进预算就会出现
+    /// "用户去找验证码的 40 秒被认证超时杀掉"（M1-04 §4）。
     /// 返回最后一次调用的真实返回码（非 EAGAIN）。
     @discardableResult
-    mutating func drive(deadlineMs: Int64? = nil, _ call: () -> Int32) throws -> Int32 {
+    mutating func drive(deadlineMs: Int64? = nil,
+                        pausedMs: () -> Int64 = { 0 },
+                        _ call: () -> Int32) throws -> Int32 {
         let start = uptimeMilliseconds()
         var directionless = 0
 
@@ -55,7 +61,7 @@ struct SessionLoop {
             if rc != LIBSSH2_ERROR_EAGAIN { return rc }
             stats.eagain += 1
 
-            let elapsed = uptimeMilliseconds() - start
+            let elapsed = uptimeMilliseconds() - start - pausedMs()
             if let deadlineMs, elapsed >= deadlineMs { throw RemoteError.network(.timeout) }
 
             let directions = libssh2_session_block_directions(session)

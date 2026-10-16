@@ -9,7 +9,11 @@ import Foundation
 public enum ConnectionPhase: String, Sendable, Hashable, CaseIterable {
     case idle
     case connecting
+    /// 密钥交换与主机密钥判定完成，认证还没成功。这条路能收 userauth 包，但开不了通道。
     case ready
+    /// 认证通过，可以开 SFTP 通道了。与 `ready` 分开是因为连接池不许把
+    /// "握手完了但凭据没过"的连接当可用的发出去（M1'-4）。
+    case authenticated
     case aborted
     case closed
 }
@@ -28,15 +32,27 @@ public struct ConnectionRequest: Sendable, Hashable {
 }
 
 /// 连接的生命周期契约。M1'-2 交握手（TCP + 密钥交换 + 主机密钥判定），
-/// 认证在 M1'-4 接进同一协议，文件系统操作在 M1'-5 由
-/// `RemoteFileSystem` 提供——刻意不在这里就要求 `fileSystem`，
-/// 免得拿一个抛"未实现"的壳冒充契约的一部分。
+/// M1'-4 交认证，文件系统操作在 M1'-5 由 `RemoteFileSystem` 提供——
+/// 刻意不在这里就要求 `fileSystem`，免得拿一个抛"未实现"的壳冒充契约的一部分。
 public protocol RemoteConnection: Actor {
     nonisolated var endpoint: Endpoint { get }
 
     /// TCP 连接 + 密钥交换 + 主机密钥信任判定。返回本次真正谈成的参数。
     /// 超时抛 `.network(.timeout)`，主机密钥不被信任抛 `.hostKeyMismatch`。
     func handshake() async throws -> NegotiatedSession
+
+    /// 认证。必须在 `handshake()` 之后：libssh2 的 userauth 要求 transport 已就绪，
+    /// 而主机密钥的信任判定必须先于凭据发出（ADR-0000 §10 H4）。
+    ///
+    /// `interactive` 只有 keyboard-interactive 会用；选别的方式时传 nil。
+    /// 选了 keyboard-interactive 又传 nil 是调用方的错，在**碰到网络之前**就抛协议违规。
+    ///
+    /// 失败分两类，走向不同（M1-04 §2）：
+    /// - `.auth(...)`：凭据问题，transport 完好，会话停在 `.ready`，
+    ///   换一份凭据再调一次就行——省掉 TCP 建连、密钥交换和那次 `none` 探测。
+    ///   但私钥的 bcrypt 那 0.4–0.6 s 每调一次 `frommemory` 都要重付，会话保留省不了它（M1-04 §3.1）。
+    /// - 其它（取消、超时、socket 断了）：会话状态不可信，硬拆并转 `.aborted`。
+    func authenticate(interactive: (any KeyboardInteractiveResponder)?) async throws -> AuthenticatedSession
 
     /// 只置原子标志，立即返回，可从任意线程调用（ADR-0001 D3）。
     /// 正在进行的调用由 session 线程在下一个 poll 边界观察到并抛 `CancellationError`，

@@ -19,7 +19,9 @@ enum HandshakeProbe {
 
     struct Failure: Error { let step: String; let detail: String }
 
-    private static let legacy = AlgorithmPreferences(
+    /// 放开老算法。五台都能谈成（M1-02 §3），所以以后各节的"打真机"都用这一套：
+    /// 认证要测的是认证，别让算法偏好先挡在门口。internal 是因为 AuthSpike 共用这一份。
+    static let legacy = AlgorithmPreferences(
         keyExchange: ["diffie-hellman-group14-sha1", "diffie-hellman-group-exchange-sha256",
                       "diffie-hellman-group1-sha1", "ecdh-sha2-nistp256", "curve25519-sha256"],
         hostKey: ["ssh-rsa", "ssh-ed25519", "ecdsa-sha2-nistp256"],
@@ -76,6 +78,7 @@ enum HandshakeProbe {
                                             authentication: .sshAgent,      // 握手阶段不碰凭据
                                             policy: ConnectionPolicy(connectTimeout: .seconds(10),
                                                                      handshakeTimeout: .seconds(30),
+                                                                     authenticationTimeout: .seconds(30),
                                                                      algorithms: preferences))
             let connection = backend.makeConnection(request)
             let start = DispatchTime.now()
@@ -121,7 +124,7 @@ enum HandshakeProbe {
         // 1) 取消：睡 300 ms 让握手确实停在 poll 里，然后置标志。
         let endpoint = Endpoint(host: host, port: Int(port), username: "tester")
         let policy = ConnectionPolicy(connectTimeout: .seconds(5), handshakeTimeout: .seconds(30),
-                                      algorithms: .libraryDefault)
+                                      authenticationTimeout: .seconds(30), algorithms: .libraryDefault)
         let connection = backend.makeConnection(ConnectionRequest(endpoint: endpoint,
                                                                   authentication: .sshAgent,
                                                                   policy: policy))
@@ -153,6 +156,7 @@ enum HandshakeProbe {
         let timedOut = backend.makeConnection(ConnectionRequest(endpoint: endpoint, authentication: .sshAgent,
                                                                 policy: ConnectionPolicy(connectTimeout: .seconds(5),
                                                                                          handshakeTimeout: .milliseconds(300),
+                                                                                         authenticationTimeout: .seconds(30),
                                                                                          algorithms: .libraryDefault)))
         let started = DispatchTime.now()
         do {

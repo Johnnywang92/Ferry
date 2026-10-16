@@ -64,6 +64,11 @@ install_keys() {   # $1=容器名
     docker exec -i -u root "$1" sh -c '
         mkdir -p /home/tester/.ssh
         touch /home/tester/.ssh/authorized_keys
+        # 每跑一次都会新生成一对密钥，上一轮那两行留着就是纯累加（跑到过 47 行）。
+        # 先把自家注释的摘掉再装新的；语料里别的 key（keys.sh 那五把）一行都不动。
+        AK=/home/tester/.ssh/authorized_keys
+        grep -v " ferry-agent-test$" "$AK" > "$AK.tmp" || true
+        mv -f "$AK.tmp" "$AK"
         while read -r line; do
             [ -n "$line" ] || continue
             grep -qxF "$line" /home/tester/.ssh/authorized_keys || echo "$line" >> /home/tester/.ssh/authorized_keys

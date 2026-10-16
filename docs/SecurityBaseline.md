@@ -135,6 +135,14 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 - 另一条来自同一轮：**老服务器不等于必须弱算法**。真老发行版 2205（OpenSSH 6.7p1 / OpenSSL 1.0.1t）能谈成 `curve25519-sha256@libssh.org` + `ssh-ed25519` + `chacha20-poly1305` + `hmac-sha2-512-etm`。"兼容老设备"的承诺因此可以写成"默认现代 + 显式开关放开老算法"，而不是默认陪跑 SHA-1。
 - 取消与超时的实测边界（M1-02 §4）：黑洞监听下置标志 → 握手抛出 3/37/48 ms（切片 50 ms），300 ms 预算 301 ms 生效，取消后 `close()` 0 ms（不补体面关闭，M0a-03 那条路 8.05 s）。这三格是 ADR-0001 D3/D4 在握手阶段的验收数字。
 - **仿真环境已落地为五台**（2026-10-16，M1-01）：2201 atmoz(实际是 OpenSSH 8.4p1)、2202 modern(9.7)、2203 legacy(9.7，**留了 dh-group14-sha256 兜底**，所以它从没真正走过 SHA-1 KEX)、2204 oldalgo(9.7，每个维度只剩一条老路)、2205 oldos(**OpenSSH_6.7p1 Debian-5+deb8u4 / OpenSSL 1.0.1t，真老发行版**)。两条纪律由此而来：矩阵的服务器列**只能按线路实测**，`sshd -T` 给的是编译支持全集而非 offer（2205 上差集包含全部 CBC、`hmac-md5`、`dh-group1-sha1`）；`ssh-dss` 这一格只有 2205 能填，且必须从容器里的客户端测（本机 OpenSSH 10.3 已把 DSA 编译掉）。
+- **认证层（M1-04）三条与凭据处理有关的基线**：
+  - **探测服务器方式本身要花额度**：`libssh2_userauth_list` 每调一次就发一条 `USERAUTH_REQUEST(method=none)`，服务器按 `MaxAuthTries` 记账、不分方法（实测只调它，第 7 次被 `MaxAuthTries 6` 踢掉）。所以每条连接只探一次并把清单缓存在连接上（不跨连接复用）；实测这条让同一台 2202 上用户能犯的口令错误从 3 次变成 5 次。
+  - **清单只能用来排除方式，不能用来承诺方式**：2201 的清单里有 `keyboard-interactive`，却一条 `INFO_REQUEST` 都不发（拿回 `-18`）；反过来"列出了 password"也不证明该账号存在（不存在的用户名照样列出同一份清单）。UI 若照着清单画"等待服务器提示"就会转圈到超时。
+  - **认证失败不拆 transport**（`.auth` / `.localIO` ⇒ 会话留 `.ready`）：免掉 TCP + 密钥交换 + 那次探测，实测同连接第二次尝试 8 ms。但每发一次凭据就烧一格额度，所以 `.auth` 一律不进 `isRetryable`——"会话还能用"与"可以自动重试"是两件事。
+- **私钥的码只有一枚**：两条入口（`frommemory` / `fromfile`）× 五种语料 × 三种口令共 31 格，凡是解析不出可用键一律 `-16 LIBSSH2_ERROR_FILE`；`-48 KEYFILE_AUTH_FAILED` 在本产物里**到不了**（`_libssh2_pub_priv_keyfilememory` 只看内层是否为 0，非 0 一律换成 `-16`；能把口令错单认出来的 `HAVE_SSLERROR_BAD_DECRYPT` 未定义）。⇒ 换 crypto 后端（mbedtls / 无后端）时这一枚会回来，`ErrorTaxonomy` 的 `-48` 三行为此保留。分流靠**只读头部**的探针，Swift 层不做任何预解密，也不把私钥写进临时文件；`libssh2` 的文案在两条入口下不同（`Unsupported private key file format` vs `Wrong passphrase or invalid/unrecognized…`），**不许拿文案做分类**。
+- **ssh-agent 的已知取消上限（本期不修）**：`agent_connect` / `agent_list_identities` 走阻塞的 Unix socket（agent.c:110 明写未实现非阻塞）。实测对面只 listen 不回话时 `agent_connect` 照样回 0，`list_identities` 5 s 没返回 ⇒ agent 那条路上"置标志到停下"的粒度是"等这一步自己回来"，不是 50 ms 切片。产品对策：选 agent 登录时要有明确等待态与"改用密钥文件"的出口（#25）。失败码分开：无 `SSH_AUTH_SOCK` ⇒ `-39` ⇒ `agentUnavailable`（要修的是本机环境，不是服务器上的 `authorized_keys`）；socket 指向不存在的文件 ⇒ `-42`。
+- **失败比成功慢得多这一格只在真老发行版上复现**：2205（五台里唯一 `UsePAM yes`）错口令 2356 / 2345 ms 两轮，同一次成功 346 ms；另外四台成败都在同一量级（2202 有一次 632 ms 未复现，不记为结论）。`authenticationTimeout` 30 s 装得下，但用户连错三次会看到约 7 秒的等待——对话框必须显示进行中，否则长得像卡死。
+- 认证阶段的取消粒度实测（M1-04 §7）：bcrypt 解私钥期间置标志 → 抛出 135 ms（对照组认证本身 415 ms；纯 CPU 那一段没有 poll 边界，与 M0a-03 同一条上限）；等用户答题期间置标志 → 77 ms 返回（≈1.5 个切片），代价是那次空应答还是发出去了。
 - FTP/FTPS 的 TLS 校验与明文传输风险：**未开工**，本节留空。
 - 代理 / ProxyJump 的信任链变化：v1.1+ 范围，暂不适用。
 
@@ -163,6 +171,11 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 | 19 | 弹窗文案与强调级别没定：`unknownHost` / `hostKnownWithOtherAlgorithms` / `certificateOnly` 三种原因要不要不同颜色、要不要显示命中文件与行号 | `HostKeyStore.verdict(for:hostKey:)` 已把 `source`/`line` 留给 UI，#25 一起定 | #25 |
 | 20 | Ferry 自己的存储放哪没定（`~/Library/Application Support/Ferry/known_hosts` 还是别处），以及 M2 沙盒开启后还能不能读用户 `~/.ssh/known_hosts` | M2 沙盒方案定案时一起测；`HostKeyStoreConfig.standard(storeURL:)` 已把路径做成参数 | M2 |
 | 21 | 并发写只测了单进程内（actor 串行 + 写前重读）；两个 Ferry 进程同时写同一文件没测 | 取决于待核 20；若路径共享则补跨进程测试或 `flock` | 视待核 20 |
+| 22 | `USERAUTH_BANNER` 本期不取不显示：五台都没配（`libssh2_userauth_banner` 全回 `-50`），文案形状、显示位置、与 TOFU 弹窗的先后都没定 | 给一台配 `Banner` 看真实到达时机（它在 `userauth_list` 那趟里就被吃掉）；#25 定显示策略 | #25 连接对话框 |
+| 23 | `.none` 直接认证成功那一格**没有复现服务器**（五台都要凭据）：`AuthenticatedMethod.none` 只有构造测试，线路形状只读过 `userauth.c:203` | 需要一台允许 none 的真实设备（老 Dropbear / NAS 固件常见），或确认能否造出 `AuthenticationMethods none` 的夹具 | 不阻塞：不影响其它分支的错误形状 |
+| 24 | `agentAttemptLimit = 5` 是策略不是实测：agent 里挂 6 把以上时真服务器是先断线还是先回 FAILURE 没量过 | 临时 agent 里 add 8 把（只用脚本自己的密钥，不动用户 agent）打 2202 | "一把钥匙不行的用户"那条支持承诺能不能写 |
+| 25 | 认证阶段的取消只测了 bcrypt 中与等人答题中两格。"签名请求已发出、服务器还没回"这一段的粒度没测 | 改造 `StallListener` 在 userauth 之后延迟回包 | 不阻塞：切片与阶段无关，M0a-03 已覆盖传输阶段 |
+| 26 | `Measure.authAttempts` 与 sshd 日志的 `attempt N` 差一格（首次 `none` 探测不计入），诊断报告要哪个口径没定 | #23 契约测试定报告字段时一起定；必要时单开 `serverAttempts` | #23 |
 
 ## 9. 变更记录
 
@@ -173,3 +186,4 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 | 2026-10-16（M1-01） | 仿真环境从三台扩到五台：新增 2204 oldalgo（每维度只剩一条 SHA-1/CBC 老路，2203 的 sha256 兜底被去掉）与 2205 oldos（Debian 8 / OpenSSH 6.7p1 / OpenSSL 1.0.1t，真老发行版）。§7.4 补两条测量纪律：`sshd -T` ≠ 线路 offer；`ssh-dss` 只能从容器客户端测。新开待核 10–13（弱算法夹具要不要造、`-T` 差集来源、9.7 的 `ls -l` 缺字段、1024 位 RSA 是否真被 `RequiredRSASize 1024` 接受） |
 | 2026-10-16（M1-02） | 连接层落地并用正式实现打通五台（`docs/spike/M1-02`）。§7.4 三条改写：**libssh2 库默认就允许四类弱算法**（2204 实测全中，白名单不能指望库）＋ `method_pref` 静默剔除未知名字（连接层加事后反查）＋ 主机密钥判定位置被定死在 KEX 后/认证前（无回调）。新增事实：老服务器不必弱算法（2205 全现代）、指纹与 `ssh-keygen -lf` 逐台一致、握手阶段取消 3/37/48 ms 与 300 ms 超时 301 ms。新开待核 14–16 |
 | 2026-10-16（M1-03） | 主机密钥层落地（`docs/spike/M1-03`）：`KnownHosts` 解析/匹配 + `HostKeyStore`（TOFU、只读兼容、六格处置表）+ 5 条与真 OpenSSH 的互认测试。§7.4 补三条实测事实：查表键是 `wireType` 而非协商名（RSA 上必然分家）、双向互认已由真 `ssh`/`ssh-keygen` 验证、`@revoked` 三种模式全拒。与 OpenSSH 的两条有意分歧坐实：它按 known_hosts 已有类型重排 KEX 偏好（libssh2 不看表），以及它把不受信证书的**叶子公钥**降级存成普通行（Ferry 不做，于是同一台开证书的服务器两边信的不是同一把）。新开待核 17–21 |
+| 2026-10-16（M1-04） | 认证四类落地（`docs/spike/M1-04`，spike 为 `SpikeRunner auth`）：密码 / 公钥（两条入口，不做 Swift 层预解密）/ keyboard-interactive / ssh-agent（临时 agent）在五台上逐方式实测，Backends +17 条（共 34）。§7.4 补五条基线：`none` 探测每调一次占服务器一格 `MaxAuthTries`（清单因此只探一次并缓存，实测把同连接可犯的口令错误从 3 次抬到 5 次）、清单只用于排除方式（2201 列了 kbdint 却从不问）、`-16` 是私钥那 31 格里唯一的码且 `-48` 在本产物不可达、agent 的阻塞 Unix socket 是本期取消粒度上限（挂起 5 s 不返回）、2205 错口令 2.3 s 两次复现。新开待核 22–26 |

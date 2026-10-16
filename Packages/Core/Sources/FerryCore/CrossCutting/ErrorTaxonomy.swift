@@ -117,6 +117,7 @@ public enum ErrorTaxonomy {
     static let knownHosts: Int32 = -46
     static let methodNone: Int32 = -17
     static let publicKeyProtocol: Int32 = -36
+    static let badUse: Int32 = -39
     static let agentProtocol: Int32 = -42
     static let keyfileAuthFailed: Int32 = -48
     static let algoUnsupported: Int32 = -51
@@ -209,12 +210,18 @@ public enum ErrorTaxonomy {
     }
 
     /// 认证方式。同一个 `-16 FILE` 在不同方式下含义完全不同，光看码分不出来。
+    ///
+    /// 私钥那三格不是"给没给口令"这么简单，而是"给没给口令"×"这把是不是加密的"，
+    /// 后一半由 `PrivateKeyEncryption.probe` 读头部确认（M1-04 §3）。
+    /// 合在一起看，`-16` 才有三种不同的下一步。
     public enum AuthMethod: Sendable, Hashable {
         case password
         /// 带了口令去解私钥。
         case encryptedKey
-        /// 私钥不需要口令。
+        /// 头部确认这把是明文，所以压根没有口令可给。
         case plainKey
+        /// 头部确认这把是加密的，而这次没带口令——和"口令错"是完全不同的两件事。
+        case encryptedKeyWithoutPassphrase
         case agent
         case keyboardInteractive
     }
@@ -234,14 +241,40 @@ public enum ErrorTaxonomy {
         case authenticationFailed, methodNone:
             switch method {
             case .password, .keyboardInteractive: return .auth(.badPassword)
-            case .encryptedKey, .plainKey, .agent: return .auth(.keyRejected)
+            case .encryptedKey, .plainKey, .encryptedKeyWithoutPassphrase, .agent:
+                return .auth(.keyRejected)
             }
-        case publicKeyUnverified, keyfileAuthFailed:
+        case publicKeyUnverified:
             return .auth(.keyRejected)
+        case keyfileAuthFailed:
+            // -48 覆盖的两件事都在私钥解密那一步：`openssh-key-v1` 带 bcrypt 却没给口令，
+            // 与解出来那两个校验字对不上（pem.c:471 与 pem.c:676，两处用的同一个码）。
+            // 所以分格依据和 -16 一样只看"带没带口令"。
+            // 但这枚码在我们这份产物里**两条公共入口都到不了**：`frommemory`/`fromfile` 的调用方
+            // 只看内层返回是否为 0，非 0 一律换成 -16（M1-04 §3.2，31 格实测无一 -48）。
+            // 这三行留着是给换 crypto 后端时的兜底——那时 -48 会回来，含义仍是这两件事。
+            switch method {
+            case .encryptedKey: return .auth(.passphraseIncorrect)
+            case .encryptedKeyWithoutPassphrase: return .auth(.passphraseRequired)
+            case .password, .plainKey, .agent, .keyboardInteractive: return .auth(.keyRejected)
+            }
+        case badUse:
+            // 这条码在 agent 之上有两种来路：`libssh2_agent_connect` 拿不到 `SSH_AUTH_SOCK`
+            // （agent.c:182），以及签名请求发出前发现 `agent->ops` 还没连上（agent.c:502）。
+            // 两者对用户都是"本机没有可用的 agent"，跟服务器认不认这把钥匙无关。
+            // 别的调用点拿到 -39 是我们自己用错了 API，不许冒充服务器给的结论，交回会话层。
+            return method == .agent ? .auth(.agentUnavailable) : nil
         case file:
-            // -16 实测同时覆盖"口令错"和"私钥格式不支持"，无法二选一。
-            // 只有在确实带了口令去解密时才敢说 passphraseIncorrect，否则退回 keyRejected。
-            return method == .encryptedKey ? .auth(.passphraseIncorrect) : .auth(.keyRejected)
+            // -16 覆盖的不止三件事：`frommemory`/`fromfile` 两条入口 × 四种私钥形态 × 三种口令，
+            // 31 格里凡是解析不出可用的键就全是这一枚（M1-04 §3.1）。所以能不能细化只看两件事实：
+            // 只有在确实带了口令去解密时才敢说 passphraseIncorrect；
+            // 头部确认过是加密的、又确实没带口令，才敢说 passphraseRequired；
+            // 其余一律退回 keyRejected——不猜。
+            switch method {
+            case .encryptedKey: return .auth(.passphraseIncorrect)
+            case .encryptedKeyWithoutPassphrase: return .auth(.passphraseRequired)
+            case .password, .plainKey, .agent, .keyboardInteractive: return .auth(.keyRejected)
+            }
         default:
             return nil
         }

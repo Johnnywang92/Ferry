@@ -41,6 +41,20 @@ public enum AuthFailure: String, Sendable, Hashable, CaseIterable {
     case passphraseRequired
     case passphraseIncorrect
     case tooManyAuthAttempts
+    /// 服务器在 `USERAUTH_FAILURE` 里列出的方式压根不含用户选的那一种。
+    ///
+    /// 由后端拿 `libssh2_userauth_list` 的结果合成，`ErrorTaxonomy.classifyAuth` 不产出它：
+    /// 依据是对面的清单，不是错误码。把它算进 `badPassword` 会让用户反复重打一个
+    /// 这台服务器压根不收的口令（M1-04 §5.2）。
+    case methodNotOffered
+    /// 用户选了 ssh-agent，而这台机器上没有可用的 agent（`SSH_AUTH_SOCK` 没设、agent 没在跑、
+    /// socket 指向了不存在的路径）。
+    ///
+    /// libssh2 在 `libssh2_agent_connect` 阶段就回 `-39 LIBSSH2_ERROR_BAD_USE`（agent.c:182，
+    /// 理由原文是"Unable to get socket name from environment variable"），压根没走到"这把钥匙
+    /// 服务器认不认"。报成 `keyRejected` 会把用户支去查服务器上的 `authorized_keys`，
+    /// 而真正要修的是本机那个环境变量。
+    case agentUnavailable
 }
 
 public enum LocalIOKind: String, Sendable, Hashable, CaseIterable {
@@ -56,9 +70,18 @@ extension RemoteError {
         return false
     }
 
+    /// 出这个错之后，这条传输连接还能不能留给下一次尝试。
+    ///
+    /// `.auth` 与 `.localIO` **不在**里面：服务器回 `USERAUTH_FAILURE` 之后 libssh2 的认证状态机
+    /// 干净地回到 idle，换个口令再调一次就免掉 TCP 建连、密钥交换和那次 `none` 探测
+    /// （M1-04 §2.2 实测：同一条 2202 连接上第二次尝试 8 ms 就走完了）。加密私钥那一轮
+    /// bcrypt 省不掉——每次 `frommemory` 都重付 0.4–0.6 s（M1-04 §3.1）。
+    /// 这不等于"可以拿同一份凭据原地重试"——那是 `isRetryable` 管的，
+    /// 认证失败一律不可自动重试，因为每发一次就烧掉服务器一格 `MaxAuthTries`。
+    /// 被取消或超时打断的那趟也不在这里判：那抛的是 `CancellationError`，由后端硬拆。
     public var isFatalToSession: Bool {
         switch self {
-        case .auth, .hostKeyMismatch, .protocolViolation:
+        case .hostKeyMismatch, .protocolViolation:
             return true
         default:
             return false

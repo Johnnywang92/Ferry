@@ -120,6 +120,7 @@ MACs hmac-sha1,hmac-sha1-96
 2. **atmoz 的 `chown tester:tester` 失败**：它的运行期建用户把组名做成 `group_1001`，用户主组不是同名组。脚本改用 `id -u/-g` 的数字形式。
 3. **"命令跑不通"≠"认证失败"**：2201 的 `tester` shell 是 `/bin/false`（SFTP-only 设备的常态），认证通过后远程命令必然 rc=1；另外 `/home/tester/.ssh` 归 root 时公钥认证过不了，把属主改成 tester 自己就过了。判据因此定在 `Authenticated to` 那一行，不是退出码。SFTP-only 的服务器只支持 subsystem，正是我们产品的用法。
 4. **`Spike/Scripts/keys.sh` 会覆盖 `authorized_keys`**（它是 `cat > authorized_keys`，不是追加），跑完它，本轮装进去的临时 agent 公钥就没了，`ssh-agent-test.sh` 要重跑一次补回去。#20 同时用两套密钥时这是个真会撞上的顺序依赖。
+5. **反过来那一侧也得裁剪**：`ssh-agent-test.sh` 每跑一次都新生成一对 `ferry-agent-test` 密钥，纯 append 会让 2202 的 `authorized_keys` 只增不减（本轮实测跑到 47 行）。脚本现在先摘掉自己上一轮那些以 ` ferry-agent-test` 结尾的行再装新的，`keys.sh` 那五把语料公钥一行都不动。这不只是整洁问题：#20 的 `MaxAuthTries` 预算实测（M1-04 §2.3）算的是"一条连接上能试几轮"，而 agent 路上**每把钥匙都是一次完整尝试**，表里堆几十行就会让"哪把被拒"这件事和"额度用尽"混成同一个 `-18`。
 
 ## 6. 出口标准对照
 
