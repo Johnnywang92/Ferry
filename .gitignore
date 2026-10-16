@@ -11,3 +11,5 @@ ThirdParty/build/
 # 从 Ferry.html 设计稿 bundle 里剥出来的中间产物，仅本地参考
 .decode/
 App/build/
+# 另一个工具的本机记忆目录，与工程无关
+.workbuddy/

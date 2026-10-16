@@ -29,7 +29,7 @@ try? stamp.write(toFile: stampPath, atomically: true, encoding: .utf8)
 
 print("== Ferry 签名走查探针 ==")
 if let bundle = Bundle.main.bundleIdentifier {
-    print("包标识：\(bundle)（Bundle ID 仍未定案，见 ADR-0000 §5）")
+    print("包标识：\(bundle)（临时值，M2 接 Keychain 前换成正式反域前缀，见 ADR-0000 §8 V5）")
 } else {
     print("包标识：nil —— 说明不是从 .app 里跑的，Keychain 那项测不出真实行为")
 }

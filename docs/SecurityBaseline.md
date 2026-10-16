@@ -1,7 +1,7 @@
 # SecurityBaseline · 依赖与安全基线
 
 状态：**M0b 骨架**（v2.3 §57 要求的产物）。已核实的内容在下面直接给结论；没核实的一律标 **待核** 并写明怎么核，**不进入结论**。
-最后更新：2026-10-15
+最后更新：2026-10-16
 
 ---
 
@@ -98,15 +98,22 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 - HR 下 library validation 拦的是 **Team ID，不是文件位置**：第三方 dylib 复制进 bundle 并由内向外重新 ad-hoc 签名后 `dlopen` 仍被拒。⇒ 静态链接是当前唯一能装第三方代码进可运行产物的形状；任何 dylib 化依赖（典型：Sparkle）都需要先做一次"要不要开 `disable-library-validation`"的显式决定。
 - DYLD 注入需要**两个**开关：只开 `allow-dyld-environment-variables` 仍被挡（注入体过不了 library validation），再加 `disable-library-validation` 才成功；`get-task-allow` 对此无用。
 - `--timestamp` 不能对 ad-hoc 用（拿不到 secure timestamp），脚本只在有真身份时加。
+- **Bundle ID 用临时值 `local.ferry.Ferry` 到 M2 前**（2026-10-16 定案）。它同时是 Keychain 条目的归属与 Sparkle 的更新标识，正式反域前缀到位后，M0b-04 §6 那种"换 Identifier 仍能读回"的便利**不能当作改名安全的依据**——见 §7.2 的代价清单。
 
-### 7.2 凭据存储（M2 开工前必须先定）
+### 7.2 凭据存储（已定案：登录钥匙串）
 
 | 路径 | ad-hoc 下的实测 | 影响 |
 |---|---|---|
 | 登录钥匙串（file-based，`kSecUseDataProtectionKeychain=false`） | 读写通；换 cdhash / 换 entitlements / 换签名 Identifier / 脱离 bundle 四种身份变化后**都能读回同一条目** | 能用，但没有数据保护类，条目会随登录钥匙串被备份/迁移带走 |
 | data-protection 钥匙串 | 一律 `err -34018`（errSecMissingEntitlement）；**补 `keychain-access-groups` 后签名能吃下这个 entitlement，但进程在 exec 阶段被 SIGKILL（rc=137，无输出、无崩溃报告）** | ad-hoc 阶段无解。要用它就必须有真实签名身份（`Apple Development`/`Developer ID`） |
 
-⇒ "重建后 Keychain 条目失效"这个担心在登录钥匙串这条路**没被观察到**；真正卡住的是 data-protection 完全不可用。两种活路都要在 M2 前选，选完 §8 待核 3 才能闭合。
+⇒ "重建后 Keychain 条目失效"这个担心在登录钥匙串这条路**没被观察到**；真正卡住的是 data-protection 完全不可用。
+
+**定案（2026-10-16，ADR-0000 §8 V3）**：M2 用**登录钥匙串**，`SecItem*` 一律不传 `kSecUseDataProtectionKeychain`（默认即登录钥匙串）。随这条定案一起接受的代价：
+
+- 没有数据保护类可用，密码项会随登录钥匙串被备份、迁移到另一台机器；
+- ACL 形状本轮没读到（§8 待核 6），"换 cdhash 仍读得回"是**行为观察**不是机制结论——换机器、macOS 升级或用户改钥匙串设置后不能假定照旧，M2 的凭据测试要**把这条重新跑一遍**而不是复用本节。
+- 后续拿到真实签名身份时若要迁到 data-protection 钥匙串，得写**显式搬迁路径**（两个是不同的库，改 flag 不会带走已有条目），并先闭合 §8 待核 7。
 
 ### 7.3 分发（本期不可验证）
 
@@ -131,7 +138,7 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 | 4 | Homebrew 额外搬的 OSV/fuzz 修复是否纳入 | 与 `libssh2.rb` formula 对账 | M1 决定 |
 | 5 | 真实 Gatekeeper 体验（未公证） | 干净机器/VM 上贴 `0081` 隔离位跑 M0b-04 §4 那张表 | M6 发布说明 |
 | 6 | 登录钥匙串条目的 ACL 实际形状 | `security dump-keychain -a`（逐条弹窗）或非 ad-hoc 身份交叉读取 | §7.2 的"未绑定"目前是行为推断 |
-| 7 | 真身份下 data-protection 钥匙串是否可用 | 需要 `Apple Development` 身份 + 用户钥匙串私钥授权 | M2 凭据方案 |
+| 7 | 真身份下 data-protection 钥匙串是否可用 | 需要 `Apple Development` 身份 + 用户钥匙串私钥授权 | **不再阻塞 M2**（M2 走登录钥匙串）；阻塞"账号到位后是否迁移到 data-protection"的评估 |
 | 8 | 构建工具链版本对产物的影响 | 目前只在 provenance 记录不校验 | 长期可复现性 |
 | 9 | x86_64 切片是否保留 | 与 S3"仅 arm64"对齐的产物裁剪决定 | 包体大小、签名走查覆盖面 |
 
@@ -140,3 +147,4 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 | 日期 | 内容 |
 |---|---|
 | 2026-10-15 | 建骨架。钉版三件套落地（OpenSSL 3.5.9 / libssh2 1.11.1 + 10 补丁 / cmake 3.31.12）；v2.3 §78 的 5 条"待核"关掉 4 条、纠正 1 条（CVE-2026-43798 属 swift-nio-ssh，对本依赖集不适用）；补 M0b-04 的签名/HR/Keychain 实测基线 |
+| 2026-10-16 | 落两条决定：**M2 凭据走登录钥匙串**（§7.2，附接受的代价与迁移要求）、**Bundle ID 暂用 `local.ferry.Ferry` 到 M2 前**（§7.1）。待核 7 从"阻塞 M2"降级为"阻塞未来的 data-protection 迁移评估" |
