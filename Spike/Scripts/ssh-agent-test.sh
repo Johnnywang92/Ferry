@@ -103,7 +103,11 @@ ssh-add -l | sed 's/^/    /'
 
 if [ ${#RUN_CMD[@]} -gt 0 ]; then
     echo "== 把 agent 交给调用方命令（跳过逐台自检）"
-    exec "${RUN_CMD[@]}"
+    # 不能用 exec：那会替换掉本 shell，EXIT trap 不触发，agent 和临时目录全留在系统里。
+    # 所以要显式退出，并把调用方命令的退出码原样传出去。
+    rc=0
+    "${RUN_CMD[@]}" || rc=$?
+    exit "$rc"
 fi
 
 echo "== 4. 只许走 agent 认证，逐台连"
