@@ -9,6 +9,7 @@ RUN apk add --no-cache openssh bash iproute2 \
 
 COPY sshd/sshd_modern.conf /etc/ssh/sshd_config.d/modern.conf
 COPY sshd/sshd_legacy.conf /etc/ssh/sshd_config.d/legacy.conf
+COPY sshd/sshd_oldalgo.conf /etc/ssh/sshd_config.d/oldalgo.conf
 COPY sshd/entrypoint.sh /entrypoint.sh
 COPY seed-corpus.sh /seed-corpus.sh
 RUN chmod +x /entrypoint.sh /seed-corpus.sh

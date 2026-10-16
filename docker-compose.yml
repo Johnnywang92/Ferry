@@ -1,5 +1,9 @@
-# M0a spike 用仿真环境。三台服务器分别对应：
-#   atmoz/sftp 主测试环境、现代 OpenSSH 对照组、老算法设备仿真。
+# M0a spike 用仿真环境。五台服务器分别对应：
+#   atmoz/sftp 主测试环境、现代 OpenSSH 对照组、老算法设备仿真、
+#   "只剩一条老路"的算法收窄仿真、真老发行版（Debian 8 / OpenSSH 6.7p1）。
+#
+# 端口与用途对照见 docs/spike/M1-01-五台服务器与临时agent.md §1；2205 起不来时
+# 不要拿 2204 顶替它的数据（两台的分工就是"配置能做到的"vs"年代本身带来的"）。
 #
 # 重要：atmoz/sftp 官方镜像只有 linux/amd64，在 arm64 机器上走 Rosetta，
 # 单次 sftp_init 慢约 200 倍（实测 400ms vs 2ms，见 docs/spike/M0a-01）。
@@ -29,6 +33,25 @@ services:
     ports: ["2203:22"]
     environment:
       SSHD_PROFILE: legacy
+
+  # 2204：新版 sshd 但每个算法维度只留一条 SHA-1/CBC 老路（比 legacy 更窄，
+  # legacy 还有 dh-group14-sha256 兜底）。AlgorithmMatrix 用它把"算法本身过不过"
+  # 和"恰好能绕"分开。协商实测见 docs/spike/M1-01 §3。
+  sftp-oldalgo:
+    build:
+      context: ./docker/openssh
+    ports: ["2204:22"]
+    environment:
+      SSHD_PROFILE: oldalgo
+
+  # 2205：真老发行版（Debian 8 / OpenSSH 6.7p1），不挑算法，跑它自己的默认集。
+  # ADR-0000 §9 N2 定的"两者都做"里的第二台：配置版仿不出老服务器的行为差异
+  # （SFTP 版本、老字段、握手细节），也仿不出 ssh-dss 这类已被现代镜像删掉的算法。
+  # 官方镜像无 arm64，走转译，延迟类数据不可与原生 arm64 的那几台对比。
+  sftp-oldos:
+    build:
+      context: ./docker/oldos
+    ports: ["2205:22"]
 
 volumes:
   atmoz-data:

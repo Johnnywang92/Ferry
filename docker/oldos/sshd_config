@@ -1,0 +1,21 @@
+# 2205：真老服务器的 sshd 配置。
+# 刻意**不**限算法 —— 这一台的价值就是"2014 年 OpenSSH 自己默认给什么"，
+# 手挑算法会让它退化成又一台配置版仿真（那已经有 2203/2204 了）。
+# 只写必须动容器才能跑的几项，其余全部留 6.7p1 的出厂默认。
+
+Port 22
+ListenAddress 0.0.0.0
+
+# jessie 默认 sandbox 依赖特权命名空间，容器里没给 CAP_SYS_ADMIN 会直接起不来。
+UsePrivilegeSeparation no
+
+# Debian 的 sshd 是带 PAM 编译的；开 keyboard-interactive 要靠它，
+# M1'-4 需要一台真的会下发 keyboard-interactive 请求的服务器。
+UsePAM yes
+PasswordAuthentication yes
+ChallengeResponseAuthentication yes
+PubkeyAuthentication yes
+
+Subsystem sftp internal-sftp
+
+LogLevel DEBUG

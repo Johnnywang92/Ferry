@@ -4,6 +4,7 @@ set -e
 case "${SSHD_PROFILE:-modern}" in
     modern) cp /etc/ssh/sshd_config.d/modern.conf /etc/ssh/sshd_config ;;
     legacy) cp /etc/ssh/sshd_config.d/legacy.conf /etc/ssh/sshd_config ;;
+    oldalgo) cp /etc/ssh/sshd_config.d/oldalgo.conf /etc/ssh/sshd_config ;;
     *) echo "unknown SSHD_PROFILE: $SSHD_PROFILE" >&2; exit 1 ;;
 esac
 
