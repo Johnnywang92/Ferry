@@ -70,11 +70,25 @@ struct SpikeRunner {
             PathOracleSpike.run()
         case "charset":
             CharsetProbe.run()
+        case "handshake":
+            // 正式实现是 actor，探针要等它跑完，用信号量把 main() 钉住。
+            // 但 main() 隐含 @MainActor：Task {} 会继承主执行器，而主线程正卡在
+            // done.wait() 上，任务永远轮不到执行——所以必须显式离开主线程。
+            setbuf(stdout, nil)
+            let done = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                Task {
+                    await HandshakeProbe.run()
+                    done.signal()
+                }
+            }
+            done.wait()
         default:
-            print("用法：spike [channels <次数> | throughput | latency | cancel | small | keys | rename | paths | charset]")
+            print("用法：spike [channels <次数> | throughput | latency | cancel | small | keys | rename | paths | charset | handshake]")
             print("  throughput 可用环境变量 SPIKE_FILE / SPIKE_CHUNK / SPIKE_LEVELS 调整负载")
             print("  latency 可用环境变量 SPIKE_REQUESTS / SPIKE_REQ_SIZE 调整请求数与大小")
             print("  paths 默认打到 2201（atmoz），用 SPIKE_PORT 换成其它服务器对照")
+            print("  handshake 可用 SPIKE_PORTS / SPIKE_PREFS=legacy / SPIKE_EXPERIMENT=stall 调整")
             exit(2)
         }
     }

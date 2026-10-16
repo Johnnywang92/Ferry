@@ -3,8 +3,9 @@ import PackageDescription
 
 // M0a 技术验证专用，独立可删。这里刻意直接调 libssh2 C API，
 // 不经过 Core 协议抽象——spike 要测的就是底层库本身的行为。
-// 唯一的例外是 path 模式：它要用 Core 的 PathResolver 去对服务器的 realpath，
-// 那是"实现 vs 事实"的对照，不是抽象层验证。
+// 两个例外：path 模式要用 Core 的 PathResolver 去对服务器的 realpath，
+// 那是"实现 vs 事实"的对照；handshake 模式必须走 Backends 的正式实现，
+// 因为它测的就是以后要发布的那条握手路径。
 //
 // M0b 起链的是 ThirdParty/build-xcframework.sh 的产物（锁定 commit + 静态 OpenSSL 3），
 // 通过 Backends 包复用同一个 CLibssh2 模块——模块名不变，spike 代码无需改动。
@@ -23,6 +24,8 @@ let package = Package(
             name: "SpikeRunner",
             dependencies: [
                 .product(name: "FerrySSHShim", package: "Backends"),
+                // handshake 探针测的是正式实现，不是再抄一遍 libssh2 调用。
+                .product(name: "FerryBackendsSFTP", package: "Backends"),
                 .product(name: "FerryCore", package: "Core")
             ],
             path: "Sources/SpikeRunner"
