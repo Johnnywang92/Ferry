@@ -25,7 +25,14 @@ public enum RemoteItemKind: UInt8, Sendable, Hashable {
     case file
     case directory
     case symbolicLink
+    /// 既不是文件也不是目录也不是链的条目（FIFO、socket、设备节点）。
+    /// 注意这与 `.unknown` 不同：那是"服务器没说"。
     case other
+    /// 服务器这次压根没给权限位，也没有可降级用的 longentry，条目类型未知。
+    ///
+    /// 有这个格是因为不能拿猜测填类型：把未知判成 `file`，同步引擎会去读一个
+    /// 其实是目录的条目；判成 `directory` 又会递归进一个文件。
+    case unknown
 }
 
 /// 可信度标记第一天就有：同步引擎用 mtime 判断"未修改"，
@@ -41,8 +48,25 @@ public struct RemoteItem: Sendable, Hashable {
     /// 部分 FTP 服务器不返回 MDTM；SFTP 只有秒级精度。
     public let mtimeIsReliable: Bool
 
-    public let linkTarget: String?
+    /// 软链指向的原文，未解析（相对目标就是相对目标）。非软链为 nil。
+    ///
+    /// 类型是 `RemotePath` 而不是 `String`：目标本身可能含非 UTF-8 字节
+    /// （M0b-01 的迷宫里就有一条链指向那个 GBK 名字），一过硬编码字符集的 `String`
+    /// 就把 R5 的"字节权威"破掉了。显示走 `displayString(using:)`。
+    ///
+    /// 目录列表**不会**填这一格：readdir 那一个包里根本没有目标，
+    /// 要拿就得每条链一次 `readlink` 往返。填它的地方是
+    /// `RemoteDirectoryListing` 的解析缓存（M1-05 §4）。
+    public let linkTarget: RemotePath?
     public let permissions: UInt16?
+    /// 数字 id。SFTP v3 只给数字，不给名字。
+    ///
+    /// `owner` / `group` 这两个 `String` 在 SFTP 侧一律是 nil：协议里没有名字映射，
+    /// 而 `owner-name@openssh.com` 那套扩展属性被 libssh2 解析后直接丢掉
+    /// （`sftp_bin2attr` 只把扩展段用来推进游标，见 sftp.c 的 EXTENDED 分支），
+    /// 客户端拿不到。留着这两个字段是给 FTP 用的——`LIST` 里有用户名和组名。
+    public let uid: UInt32?
+    public let gid: UInt32?
     public let owner: String?
     public let group: String?
 
@@ -53,8 +77,10 @@ public struct RemoteItem: Sendable, Hashable {
         modificationDate: Date?,
         sizeIsExact: Bool,
         mtimeIsReliable: Bool,
-        linkTarget: String? = nil,
+        linkTarget: RemotePath? = nil,
         permissions: UInt16? = nil,
+        uid: UInt32? = nil,
+        gid: UInt32? = nil,
         owner: String? = nil,
         group: String? = nil
     ) {
@@ -66,6 +92,8 @@ public struct RemoteItem: Sendable, Hashable {
         self.mtimeIsReliable = mtimeIsReliable
         self.linkTarget = linkTarget
         self.permissions = permissions
+        self.uid = uid
+        self.gid = gid
         self.owner = owner
         self.group = group
     }

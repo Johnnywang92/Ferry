@@ -23,11 +23,22 @@ public struct ConnectionRequest: Sendable, Hashable {
     public let endpoint: Endpoint
     public let authentication: AuthenticationMethod
     public let policy: ConnectionPolicy
+    /// 文件名的显示字符集（R5）。默认 UTF-8。
+    ///
+    /// 只能是连接上的配置，不能自动探测：M0b-02 实测同一份 GBK 字节
+    /// `D6 D0 CE C4` 有九个候选都"解得出来"，命中多个不构成证据。
+    /// 它只影响显示，`RemotePath.wireBytes` 一个字节都不动。
+    public let charset: CharsetConverter.Charset
+    /// 大小写与归一化策略，属于连接（见 `RemoteFileSystem.pathPolicy`）。
+    public let pathPolicy: PathPolicy
 
-    public init(endpoint: Endpoint, authentication: AuthenticationMethod, policy: ConnectionPolicy) {
+    public init(endpoint: Endpoint, authentication: AuthenticationMethod, policy: ConnectionPolicy,
+                charset: CharsetConverter.Charset = .utf8, pathPolicy: PathPolicy = .posix) {
         self.endpoint = endpoint
         self.authentication = authentication
         self.policy = policy
+        self.charset = charset
+        self.pathPolicy = pathPolicy
     }
 }
 

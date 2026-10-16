@@ -41,6 +41,16 @@ public actor SFTPConnection: RemoteConnection {
     /// 缓存之后是 5 次（M1-04 §2.3）。
     /// 敢复用是因为实测五台在失败之后重新列出来的清单与首次一字不差。
     var offeredMethods: [String]?
+    /// SFTP 通道。一条连接**只开一次**：`libssh2_sftp_init` 就是一条 SSH 通道，
+    /// 服务器按 `MaxSessions` 记账（实测两台都在第 11 次 `sftp_init` 回 `-21`，
+    /// M0a-01），而 atmoz 那台上一次 `sftp_init` 要 390–433 ms，是自建镜像的 200 倍。
+    var sftpChannel: OpaquePointer?
+    /// 登录后 `realpath(".")` 拿到的目录，`PathResolver` 的基准与 `~` 的落点。
+    ///
+    /// 只能问服务器，不能猜：2201 的 chroot 视图根是 `/`，2202 是 `/home/tester`
+    /// （M0b-01 §3）。
+    var loginDirectory: RemotePath?
+    var fileStats = FileStats()
     var loopStats = LoopStats()
     var elapsedMs: Int64 = 0
     var authElapsedMs: Int64 = 0
@@ -71,6 +81,29 @@ public actor SFTPConnection: RemoteConnection {
 
     public var phase: ConnectionPhase { state }
 
+    /// 文件系统侧的计数。这些数不是给人看的装饰：ADR-0001 D8 那条"禁止逐条 stat"
+    /// 和"解析缓存省下多少往返"只能靠往返数被证伪。
+    public struct FileStats: Sendable, Hashable {
+        /// 开过几条 SFTP 通道。一条连接应当恒为 1（`MaxSessions` 记账的就是它）。
+        public var channelInits: Int = 0
+        /// 走过网络的 readdir 包数。与条目数之比就是"一个包喂出几条"。
+        public var readdirPackets: Int = 0
+        /// `readdir_ex` 的调用次数，含从已收到的包里直接取出的那些。
+        public var readdirCalls: Int = 0
+        public var entriesObserved: Int = 0
+        /// 名字或目标装不下、换大缓冲重来的次数（libssh2 回 `-38`）。
+        public var bufferGrowths: Int = 0
+        /// 真正发出去的 `readlink` 请求数。缓存生效时这个数远小于链的条数×段数。
+        public var linkProbes: Int = 0
+        /// 走链时发出去的段 `lstat` 数。与 `linkProbes` 的差就是"多少段根本不是链"，
+        /// 这两个数分开记，才量得出 lstat 先行到底多花几趟往返。
+        public var linkSegmentStats: Int = 0
+        public var linkCacheHits: Int = 0
+        public var listCalls: Int = 0
+        public var statCalls: Int = 0
+        public var listingElapsedMs: Int64 = 0
+    }
+
     /// 握手与认证的实测数据，给测试和诊断报告用。
     public struct Measure: Sendable, Hashable {
         public let elapsedMs: Int64
@@ -84,6 +117,7 @@ public actor SFTPConnection: RemoteConnection {
         /// 在这条连接上发起过多少次认证尝试（含失败的）。`MaxAuthTries` 就是这么烧掉的，
         /// 诊断报告要能回答"用户说没连上，服务器那边其实被试了几次"。
         public let authAttempts: Int
+        public let file: FileStats
     }
 
     public var measure: Measure {
@@ -93,7 +127,8 @@ public actor SFTPConnection: RemoteConnection {
                 pollTimeoutCount: loopStats.pollTimeouts,
                 executorThreads: visitedThreads.sorted(),
                 authElapsedMs: authElapsedMs,
-                authAttempts: authAttempts)
+                authAttempts: authAttempts,
+                file: fileStats)
     }
 
     public func handshake() async throws -> NegotiatedSession {
@@ -255,12 +290,27 @@ public actor SFTPConnection: RemoteConnection {
         case .idle:
             state = .closed
         case .connecting, .ready, .authenticated:
+            // 通道要在 session 之前关：`libssh2_sftp_shutdown` 内部要往通道写
+            // `SSH_MSG_CHANNEL_CLOSE`，session 没了就没这条路了。
+            shutdownChannel()
             disconnectOrderly()
             releaseSession()
             state = .closed
         case .aborted, .closed:
             break
         }
+    }
+
+    /// 体面关闭 SFTP 通道。**只在 `close()` 里调**：取消路径按 ADR-0001 D4 不做任何
+    /// 体面关闭（实测等响应要 8 s），而 `libssh2_session_free` 会把通道连同一起放掉，
+    /// 只有 `LIBSSH2_SFTP` 这一块结构体留在原地——每条被废掉的连接漏一次，
+    /// 上限就是"一条连接一个"，因为通道本身一条连接只开一次（M1-05 §2）。
+    private func shutdownChannel() {
+        guard let channel = sftpChannel else { return }
+        sftpChannel = nil
+        guard let session, fd >= 0 else { return }
+        var loop = SessionLoop(fd: fd, session: session, cancel: cancelFlag, stats: loopStats)
+        _ = try? loop.drive(deadlineMs: 500) { libssh2_sftp_shutdown(channel) }
     }
 
     private func disconnectOrderly() {

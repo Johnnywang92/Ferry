@@ -47,7 +47,7 @@ public struct ComparisonKey: Hashable, Sendable {
 }
 
 /// 大小写与归一化策略属于连接/文件系统，不属于单个路径实例。
-public struct PathPolicy: Sendable {
+public struct PathPolicy: Sendable, Hashable {
     public let caseSensitive: Bool
     public let normalizeForCompare: Bool
 
@@ -55,6 +55,10 @@ public struct PathPolicy: Sendable {
         self.caseSensitive = caseSensitive
         self.normalizeForCompare = normalizeForCompare
     }
+
+    /// POSIX 服务器（本次五台全是）。Windows/Serv-U 那类不区分大小写的
+    /// 由站点配置覆盖，M3 兼容性阶段补。
+    public static let posix = PathPolicy(caseSensitive: true, normalizeForCompare: true)
 
     public func key(for path: RemotePath) -> ComparisonKey {
         ComparisonKey(wireBytes: path.wireBytes, pathPolicy: self)

@@ -97,6 +97,16 @@ libssh2_sftp_symlink_ex(sftp, orig, orig_len, linkpath, linkpath_len, LIBSSH2_SF
 - `LIBSSH2_SFTP_S_IFMT` 一类的 `S_ISLNK()` 是函数宏，Swift 侧导不进来，只能用 `permissions & 0o170000 == 0o120000`；
 - 这条结论绑在 Homebrew 的开发版 libssh2 上，**#14 换静态 xcframework 后必须重跑**（与 ADR-0001 §6 的复测清单同批）。
 
+> **根因追记（2026-10-16，M1-05 §9）**：这一节说的"`last_error` 恒为 71–134 这类非法值"
+> 不是乱码，是**本次请求的序号**。0008 补丁（CVE-2025-15661，改的正是 `sftp_symlink()`）重写后的
+> `SSH_FXP_STATUS` 分支在 type 之后只 `_libssh2_get_u32` 一次，而 wire 上 type 后面第一个 u32 是
+> 请求 id、状态码在它后面那一格；打补丁前的写法是 `_libssh2_ntohu32(data + 5)`（跳过 id）。
+> 于是序号 71 就是"这条连接上的第 71 个 SFTP 请求"——本轮每条链要问 70 多段，数字正好落在这个区间。
+> 序号 ≤21 时会被当成合法状态码（`2` 伪装成 `NO_SUCH_FILE`），序号恰为 0 时失败被读成 `SSH_FX_OK`
+> 的**假成功**。`sftp.c` 里只有 symlink 这一处被改坏，`stat/lstat/readdir` 等仍是正确的 `data + 5`，
+> 所以 §1 那张 26 行对照表（预言机走 `realpath`/`lstat`）**不受影响**，结论 1–5、7 全部照旧。
+> 正式实现因此把段探测改成 lstat 先行，并让 `symlink_ex` 那一族的失败一律报 `undetermined`。
+
 ## 5. 对 M0b/M1 的约束
 
 | 约束 | 出处 |

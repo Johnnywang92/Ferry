@@ -27,16 +27,31 @@ public struct ConnectionPolicy: Sendable, Hashable {
     /// 密钥交换的上限。老设备常在几百毫秒内回 banner 却把 kex 拖到十几秒。
     public var handshakeTimeout: Duration
     /// 一次认证尝试的上限。keyboard-interactive 等用户答题的时间**不算在内**
-    /// （后端每次网络往返单独计），否则用户找验证码的 40 秒会被判成网络故障。
+    /// （后端每次网络往返单独计），否则用户找验证码的 40 秒会被判成网络超时。
     public var authenticationTimeout: Duration
+    /// 单个文件系统请求（开目录、读完一个包、一次 stat）的上限。
+    ///
+    /// 计时单位是**单个请求而不是整份清单**：一次大目录列表由几十个包拼成，
+    /// 按整份限就会让"目录有一万条"变成超时理由，而按单包限只挡真卡死的那一个包。
+    ///
+    /// 这一格给默认值而其余三格不给：握手与认证测试永远不会发文件系统请求，
+    /// 在那里写 `fileOperationTimeout` 只是噪音（本依赖集里有 12 个这样的调用点）。
+    public var fileOperationTimeout: Duration
+
+    /// 默认的单请求上限。`standard` 用的就是它（不重复写数字）。
+    public static let defaultFileOperationTimeout: Duration = .seconds(15)
+
     /// 算法偏好。全部为空表示"用 libssh2 的默认顺序"。
     public var algorithms: AlgorithmPreferences
 
     public init(connectTimeout: Duration, handshakeTimeout: Duration,
-                authenticationTimeout: Duration, algorithms: AlgorithmPreferences) {
+                authenticationTimeout: Duration,
+                fileOperationTimeout: Duration = ConnectionPolicy.defaultFileOperationTimeout,
+                algorithms: AlgorithmPreferences) {
         self.connectTimeout = connectTimeout
         self.handshakeTimeout = handshakeTimeout
         self.authenticationTimeout = authenticationTimeout
+        self.fileOperationTimeout = fileOperationTimeout
         self.algorithms = algorithms
     }
 

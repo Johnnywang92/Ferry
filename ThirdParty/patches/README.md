@@ -59,6 +59,21 @@ GHSA → commit 的对应关系取自各条 advisory 页面（`github.com/adviso
   这不是回归：越界读被修掉之后，原来"碰巧读到 0"的路径改成报错，属预期副作用。
   Homebrew 那份 1.11.1_7 同样带这个补丁，行为与本文一致。
 
+  **根因已在 M1-05 §9 定位**（五台复现，原始 C 逐发实测）：0008 重写后的 `sftp_symlink()`
+  在 `SSH_FXP_STATUS` 分支里、type 之后只 `_libssh2_get_u32` **一次**，而 wire 上 type 后面
+  第一个 u32 是**请求 id**，状态码在它后面那一格；打补丁前的写法是 `_libssh2_ntohu32(data + 5)`
+  （跳过 id）。所以那条越界值不是"报错信息"，是本次请求的序号。三个后果：
+  ① 序号落在 0…21 时会被当成合法状态码（`2` 伪装成 `NO_SUCH_FILE`、`7` 伪装成
+  `CONNECTION_LOST`，都是能让同步引擎做错决定的分类）；
+  ② `symlink_ex` 是这条连接上 `LIBSSH2_SFTP` 的第一个请求时序号为 0，失败被读成
+  `SSH_FX_OK` → **`rc=0` 的假成功，出参缓冲一格都没写**；
+  ③ 序号超过 21 之后就是 71–134 这类值域外的数，怎么配对都配不出成因。
+  `sftp.c` 里**只有这一处**状态分支被改坏：`stat/lstat/open/readdir/mkdir/rmdir/unlink/rename/statvfs`
+  至今仍是正确的 `data + 5`（上游 master 也一样，且比我们多错一格 NAME 分支，我们的补丁已修）。
+  正式实现因此走 lstat 先行 + `symlink_ex` 那一族的失败一律报 `undetermined`。
+  **待决**：本地补一条补丁 0011 恢复 `data + 5` 语义要重出签名产物并动 SecurityBaseline，
+  属需要确认的方向选择，未擅自做（见 docs/spike/M1-05 §9 末）。
+
 ## 重新生成
 
 上游发新版或我们要增删补丁时，在干净的 1.11.1 上重做：

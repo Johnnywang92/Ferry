@@ -70,7 +70,7 @@ struct SpikeRunner {
             PathOracleSpike.run()
         case "charset":
             CharsetProbe.run()
-        case "handshake", "auth":
+        case "handshake", "auth", "listing":
             // 正式实现是 actor，探针要等它跑完，用信号量把 main() 钉住。
             // 但 main() 隐含 @MainActor：Task {} 会继承主执行器，而主线程正卡在
             // done.wait() 上，任务永远轮不到执行——所以必须显式离开主线程。
@@ -78,18 +78,23 @@ struct SpikeRunner {
             let done = DispatchSemaphore(value: 0)
             DispatchQueue.global(qos: .userInitiated).async {
                 Task {
-                    if mode == "auth" { await AuthSpike.run() } else { await HandshakeProbe.run() }
+                    switch mode {
+                    case "auth": await AuthSpike.run()
+                    case "listing": await ListingSpike.run()
+                    default: await HandshakeProbe.run()
+                    }
                     done.signal()
                 }
             }
             done.wait()
         default:
-            print("用法：spike [channels <次数> | throughput | latency | cancel | small | keys | rename | paths | charset | handshake | auth]")
+            print("用法：spike [channels <次数> | throughput | latency | cancel | small | keys | rename | paths | charset | handshake | auth | listing]")
             print("  throughput 可用环境变量 SPIKE_FILE / SPIKE_CHUNK / SPIKE_LEVELS 调整负载")
             print("  latency 可用环境变量 SPIKE_REQUESTS / SPIKE_REQ_SIZE 调整请求数与大小")
             print("  paths 默认打到 2201（atmoz），用 SPIKE_PORT 换成其它服务器对照")
             print("  handshake 可用 SPIKE_PORTS / SPIKE_PREFS=legacy / SPIKE_EXPERIMENT=stall 调整")
             print("  auth 可用 SPIKE_PORTS / SPIKE_PORT / SPIKE_KEY_DIR / SPIKE_EXPERIMENT=tries|cancel|stuckagent 调整")
+            print("  listing 可用 SPIKE_PORTS / SPIKE_EXPERIMENT=stat|raw / SPIKE_CHARSET=utf8 调整（语料先跑 Spike/Scripts/seed-listing-corpus.sh）")
             exit(2)
         }
     }
