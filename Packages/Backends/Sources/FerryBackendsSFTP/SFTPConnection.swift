@@ -154,8 +154,8 @@ public actor SFTPConnection: RemoteConnection {
         guard let keyPointer = libssh2_session_hostkey(newSession, &keyLength, &keyType), keyLength > 0 else {
             throw RemoteError.protocolViolation("握手成功但取不到主机密钥（type=\(keyType) len=\(keyLength)）")
         }
-        let hostKey = HostKey(algorithm: try methodName(newSession, LIBSSH2_METHOD_HOSTKEY),
-                              blob: Data(bytes: UnsafeRawPointer(keyPointer), count: keyLength))
+        let hostKey = try HostKey(algorithm: try methodName(newSession, LIBSSH2_METHOD_HOSTKEY),
+                                  blob: Data(bytes: UnsafeRawPointer(keyPointer), count: keyLength))
 
         let algorithms = NegotiatedAlgorithms(
             keyExchange: try methodName(newSession, LIBSSH2_METHOD_KEX),

@@ -41,6 +41,12 @@ enum HandshakeProbe {
         keyExchange: ["ferry-bogus-kex@example.com"], hostKey: [], encryption: [], mac: []
     )
 
+    /// 主机密钥证书算法名：libssh2 认这个名字（`hostkey_methods[]` 里有，但 `init`/`sig_verify` 是 NULL），
+    /// 所以不会像 bogus 那样被静默剔掉，而是走到 KEX 里才失败。M1'-3 §5 用它钉"证书进不了信任判定"。
+    private static let cert = AlgorithmPreferences(
+        keyExchange: [], hostKey: ["ssh-ed25519-cert-v01@openssh.com"], encryption: [], mac: []
+    )
+
     static func run() async {
         let env = ProcessInfo.processInfo.environment
         let host = env["SPIKE_AGENT_HOST"] ?? env["SPIKE_HOST"] ?? "127.0.0.1"
@@ -51,6 +57,7 @@ enum HandshakeProbe {
         case "legacy": preferences = legacy
         case "modern": preferences = modern
         case "bogus": preferences = bogus
+        case "cert": preferences = cert
         default: preferences = .libraryDefault
         }
         let backend = SFTPBackend(hostKeyTrust: TrustForSpike())

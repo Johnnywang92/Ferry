@@ -125,7 +125,11 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 
 - **主机密钥：TOFU + 兼容 `~/.ssh/known_hosts`（2026-10-16 定案，ADR-0000 §9 N3）**。首次连接询问并写入自建存储；`known_hosts` **默认只读**，写入要用户显式同意。实现上要覆盖的真实形状：hash 主机名（`|1|` 行）、同一主机多算法多行（挑与本次协商一致的那条，否则误报"密钥变了"）、文件权限与并发写；`@cert-authority` 与 `certs@openssh.com` 主机密钥证书本期不支持 → 遇到时按未知主机处理并说明原因。**"密钥变了"必须是硬阻断且不可一键跳过**，这是 TOFU 模型唯一的价值所在。
   - **判定位置被 libssh2 定死**：它没有 hostkey 回调，密钥只能在 `libssh2_session_handshake()` 返回后用 `libssh2_session_hostkey()` 取（M1-02 §6.1）。所以信任判定只能落在"KEX 之后、认证之前"，实现照此摆放并有测试盯住（拒绝时 phase 转 `aborted`、握手不返回成功）。代价：中间人此时已能看到流量，但凭据一个字节都不发。
+  - **查表键是 blob 头部的算法名（`wireType`），不是协商名**（M1-03 §3.1）。RSA 上两者必然分家：签名谈成 `rsa-sha2-512`，known_hosts 第三字段仍是 `ssh-rsa`。拿协商名查表会把 RSA 主机的正常重连误判成"这台只有别的算法"。
+  - **与真 OpenSSH 双向互认已实测**（M1-03 §3.2/§3.3，两组都在 `FERRY_LIVE_SERVERS=1` 下跑）：`ssh` 亲手写的行 Ferry 0 弹窗直接可信且文件字节不变；Ferry 写的行 `ssh-keygen -F` 查得到，且 `StrictHostKeyChecking=yes` 的 `ssh` 拿它当唯一信任来源能一路走到认证、不打任何主机密钥警告。非 22 端口两边都写 `[host]:port`（端口在方括号外面）。
   - 指纹格式已与 OpenSSH 对齐：`SHA256:` + 线路 blob 的 SHA-256 去填充 base64，五台逐台与 `ssh-keygen -lf` 一致（M1-02 §3.4）。TOFU 对话框里显示的指纹因此可以直接和用户终端上 `ssh` 打印的对照。
+  - `@revoked` 优先于任何合法行，容器实测三种 `StrictHostKeyChecking`（ask / accept-new / yes）全部拒连，Ferry 同样硬阻断（M1-03 §2）。
+  - **与 OpenSSH 的两条有意行为分歧（本轮实测坐实，不是推测）**：① OpenSSH 会按 known_hosts 里已有的类型**重排 KEXINIT 的主机密钥偏好**（同一台 2202：表里只有 rsa 行 ⇒ 谈成 `rsa-sha2-512`，只有 ed25519 行 ⇒ `ssh-ed25519`，只有 ecdsa 行 ⇒ `ecdsa-sha2-nistp256`），libssh2 不读表，谈成哪个算哪个 ⇒ `.otherAlgorithm` 这一格必须存在，且它只是提示级别、不是密钥变更。② OpenSSH 客户端默认把全部 `*-cert-v01@openssh.com` 排在偏好最前，CA 不受信时打 `No matching CA found. Retry with plain key` 并把**证书里的叶子公钥当普通密钥写进 known_hosts**；Ferry 不做这个降级 ⇒ 同一台开证书的服务器上两个客户端信的**不是同一把密钥**M1-03 §5 那台一次性容器上测得 `ssh` 侧信 ed25519 叶子（`SHA256:64yFpb9y…`）、Ferry 侧拿到 ecdsa（`SHA256:pr+Xfe2H…`；两值随该容器重建而变，不作固定向量）。共存场景下"这台主机已被信任"对两边含义不同，列 §8 待核 17。
   - 交叉验证老服务器时注意：本机 OpenSSH 10.3 对 2203/2204 **`ssh-keyscan` 拿不到 key**（唯一那条 DH-SHA1 KEX 被本机拒绝），必须在容器内或用放开老算法的客户端配置验证，否则会误判成"服务器没密钥"。
 - 弱算法（S6：CBC、`ssh-rsa`/`ssh-dss`、`hmac-sha1`、DH-SHA1）白名单 + "允许弱算法"UI 开关 → 实测矩阵写 `docs/AlgorithmMatrix.md`（M1' 产出，本文件只放指针）。老设备仿真题式有两条（配置白名单版 + 真老镜像版），两者结论分开记，不许互相顶替。**M1-02 实测把这条的前提改硬了**：libssh2 1.11.1 的**默认偏好集本身就允许四类弱算法**——不带任何策略时 2204 直接谈成 `dh-group14-sha1` + `ssh-rsa` + `aes256-cbc` + `hmac-sha1`（M1-02 §3.1）。所以白名单不能指望库来兜，必须由 Ferry 自带一份；且 `method_pref` 会**静默剔除**它不认识的名字（只有整串剔空才 `-33`），"写了策略"不等于"策略生效"⇒ 连接层加了事后反查：实际协商值越出策略就判协议违规（M1-02 §6.2）。反查只防"被放宽"，防不了"被抹掉一条偏好"，后者要靠待核 15。
 - 另一条来自同一轮：**老服务器不等于必须弱算法**。真老发行版 2205（OpenSSH 6.7p1 / OpenSSL 1.0.1t）能谈成 `curve25519-sha256@libssh.org` + `ssh-ed25519` + `chacha20-poly1305` + `hmac-sha2-512-etm`。"兼容老设备"的承诺因此可以写成"默认现代 + 显式开关放开老算法"，而不是默认陪跑 SHA-1。
@@ -154,6 +158,11 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 | 14 | **出厂默认算法白名单写死哪一份**。M1-02 §3.1 只证明了"libssh2 的库默认太宽"（2204 四类弱算法全中），没定 Ferry 的默认集；`ConnectionPolicy.standard` 在定案前仍是 `libraryDefault`，只用于测试 | #24 矩阵出来后一次定案 | 弱算法开关的默认态、#25 连接对话框要不要暴露该开关 |
 | 15 | 策略里的算法名是否全部真实编进了产物。`libssh2_session_supported_algs` 能列出支持表，但本轮没拿它做启动期校验；名字拼错现在只能靠"事后反查协商值"间接发现（它防放宽，不防被剔空） | 单测断言"策略集 ⊆ supported 列表"，覆盖四个维度 | 弱算法白名单有没有静默少一条 |
 | 16 | 握手阶段的取消只测了"不发 banner"这一种慢；KEX 中途中断、`NEWKEYS` 之后停住等更细的形状没测 | 改造 `StallListener` 做分段延迟（或 `tc netem`） | 不阻塞：切片机制与阶段无关，M0a-03 已覆盖传输阶段 |
+| 17 | **主机证书校验本期没做**：本期只做"不降级"。`@cert-authority` 行能读、能按未知主机处理，但验签、比 principal 与有效期全缺（M1-03 §5） | 需要 libssh2 之外的验签路径（证书 blob 自己解出来验 `ssh-ed25519`/`rsa-sha2-*` 签名）；先定它落在哪一期 | 与 OpenSSH 共存时的信任一致性（同一台服务器两边信的是两把密钥）；企业客户发证书登录时这一格必须先答 |
+| 18 | 系统级 `/etc/ssh/ssh_known_hosts` 只按 `ssh -G` 抄了顺序，没实测：本机没这个文件，可读性与权限语义没有样本 | 造一个只读系统级文件 + 一台真机比对 | 不阻塞：读不到按"跳过该文件"处理，与 ssh 一致 |
+| 19 | 弹窗文案与强调级别没定：`unknownHost` / `hostKnownWithOtherAlgorithms` / `certificateOnly` 三种原因要不要不同颜色、要不要显示命中文件与行号 | `HostKeyStore.verdict(for:hostKey:)` 已把 `source`/`line` 留给 UI，#25 一起定 | #25 |
+| 20 | Ferry 自己的存储放哪没定（`~/Library/Application Support/Ferry/known_hosts` 还是别处），以及 M2 沙盒开启后还能不能读用户 `~/.ssh/known_hosts` | M2 沙盒方案定案时一起测；`HostKeyStoreConfig.standard(storeURL:)` 已把路径做成参数 | M2 |
+| 21 | 并发写只测了单进程内（actor 串行 + 写前重读）；两个 Ferry 进程同时写同一文件没测 | 取决于待核 20；若路径共享则补跨进程测试或 `flock` | 视待核 20 |
 
 ## 9. 变更记录
 
@@ -163,3 +172,4 @@ v2.3 把 5 条 CVE 全标"待核"（GHSA 编号被截断、部分描述可疑）
 | 2026-10-16 | 落两条决定：**M2 凭据走登录钥匙串**（§7.2，附接受的代价与迁移要求）、**Bundle ID 暂用 `local.ferry.Ferry` 到 M2 前**（§7.1）。待核 7 从"阻塞 M2"降级为"阻塞迁移评估"。同日填 §7.4 主机密钥定案（TOFU + `known_hosts` 只读兼容）与老设备仿真题式（配置白名单版 + 真老镜像版，结论分开记） |
 | 2026-10-16（M1-01） | 仿真环境从三台扩到五台：新增 2204 oldalgo（每维度只剩一条 SHA-1/CBC 老路，2203 的 sha256 兜底被去掉）与 2205 oldos（Debian 8 / OpenSSH 6.7p1 / OpenSSL 1.0.1t，真老发行版）。§7.4 补两条测量纪律：`sshd -T` ≠ 线路 offer；`ssh-dss` 只能从容器客户端测。新开待核 10–13（弱算法夹具要不要造、`-T` 差集来源、9.7 的 `ls -l` 缺字段、1024 位 RSA 是否真被 `RequiredRSASize 1024` 接受） |
 | 2026-10-16（M1-02） | 连接层落地并用正式实现打通五台（`docs/spike/M1-02`）。§7.4 三条改写：**libssh2 库默认就允许四类弱算法**（2204 实测全中，白名单不能指望库）＋ `method_pref` 静默剔除未知名字（连接层加事后反查）＋ 主机密钥判定位置被定死在 KEX 后/认证前（无回调）。新增事实：老服务器不必弱算法（2205 全现代）、指纹与 `ssh-keygen -lf` 逐台一致、握手阶段取消 3/37/48 ms 与 300 ms 超时 301 ms。新开待核 14–16 |
+| 2026-10-16（M1-03） | 主机密钥层落地（`docs/spike/M1-03`）：`KnownHosts` 解析/匹配 + `HostKeyStore`（TOFU、只读兼容、六格处置表）+ 5 条与真 OpenSSH 的互认测试。§7.4 补三条实测事实：查表键是 `wireType` 而非协商名（RSA 上必然分家）、双向互认已由真 `ssh`/`ssh-keygen` 验证、`@revoked` 三种模式全拒。与 OpenSSH 的两条有意分歧坐实：它按 known_hosts 已有类型重排 KEX 偏好（libssh2 不看表），以及它把不受信证书的**叶子公钥**降级存成普通行（Ferry 不做，于是同一台开证书的服务器两边信的不是同一把）。新开待核 17–21 |
