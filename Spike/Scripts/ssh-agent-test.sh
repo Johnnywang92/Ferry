@@ -53,7 +53,7 @@ chmod 700 "$WORK/.ssh"
 echo "== 1. 临时环境与测试密钥（这一步还在真实 HOME 下，docker 要用它）"
 echo "  临时目录      ：$WORK"
 echo "  DOCKER_HOST   ：${DOCKER_HOST:-（默认）}"
-echo "  外部 agent    ：$OUTER_SOCK（本脚本不读不写）"
+echo "  外部 agent    ：${OUTER_SOCK}（本脚本不读不写）"
 
 ssh-keygen -q -t rsa     -b "$BITS" -f "$WORK/.ssh/id_rsa"  -N '' -C ferry-agent-test
 ssh-keygen -q -t ed25519        -f "$WORK/.ssh/id_ed25519" -N '' -C ferry-agent-test
@@ -84,9 +84,9 @@ install_keys() {   # $1=容器名
     '
 }
 for c in $CONTAINERS; do
-    docker ps --format '{{.Names}}' | grep -qx "$c" || { echo "  跳过 $c（没在运行）"; continue; }
+    docker ps --format '{{.Names}}' | grep -qx "$c" || { echo "  跳过 ${c}（没在运行）"; continue; }
     cat "$WORK/.ssh/id_rsa.pub" "$WORK/.ssh/id_ed25519.pub" | install_keys "$c"
-    echo "  $c：2 条公钥就位（幂等，重复跑不累加）"
+    echo "  ${c}：2 条公钥就位（幂等，重复跑不累加）"
 done
 
 # HOME 换掉之后 ssh 找不到用户真实的 ~/.ssh/config 和 known_hosts ——
@@ -100,7 +100,7 @@ eval "$(ssh-agent -s -a "$SOCK")"
 [ "${SSH_AUTH_SOCK:-}" = "$SOCK" ] || { echo "  ✗ agent 没用我们的 socket：${SSH_AUTH_SOCK:-无}"; exit 1; }
 echo "  HOME          ：$HOME"
 echo "  SSH_AUTH_SOCK ：$SSH_AUTH_SOCK"
-echo "  SSH_AGENT_PID ：$SSH_AGENT_PID（进程在吗：$(kill -0 "$SSH_AGENT_PID" 2>/dev/null && echo 是 || echo 否)）"
+echo "  SSH_AGENT_PID ：${SSH_AGENT_PID}（进程在吗：$(kill -0 "$SSH_AGENT_PID" 2>/dev/null && echo 是 || echo 否)）"
 
 ssh-add "$WORK/.ssh/id_rsa" "$WORK/.ssh/id_ed25519" >/dev/null 2>&1
 echo "  ssh-add -l    ："
@@ -136,11 +136,11 @@ for p in $PORTS; do
     fromagent=$(printf '%s\n' "$out" | grep -E 'Server accepts key' | tail -1 | sed -E 's/^debug1: //')
     shell_ran=$(printf '%s\n' "$out" | grep -c '^OK-' || true)   # grep 没命中时退出码 1，set -e 会当场终止脚本
     if [ -n "$authed" ]; then
-        echo "  $p：PASS — $authed"
+        echo "  ${p}：PASS — $authed"
         echo "        key 来源：${fromagent:-（没抓到 Server accepts key 行）}"
         [ "$shell_ran" -gt 0 ] && echo "        远程命令可跑" || echo "        远程命令不可跑（shell 被禁，属正常）"
     else
-        echo "  $p：FAIL rc=$rc — $(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | tail -2 | tr '\n' ' ')"
+        echo "  ${p}：FAIL rc=$rc — $(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | tail -2 | tr '\n' ' ')"
         fails=$((fails + 1))
     fi
 done
@@ -161,13 +161,13 @@ for p in 2203 2204; do
                "${LEGACY[@]}" -p "$p" "tester@$HOST" true 2>&1) || rc=$?
     got=$(printf '%s\n' "$out" | grep -c 'Authenticated to' || true)
     if [ "$expect_pass" -eq 1 ] && [ "$rc" -ne 0 ]; then
-        echo "  $p：✗ 预期 ed25519 可用（PubkeyAcceptedAlgorithms 是 +ssh-rsa 追加），却 rc=$rc"
+        echo "  ${p}：✗ 预期 ed25519 可用（PubkeyAcceptedAlgorithms 是 +ssh-rsa 追加），却 rc=$rc"
         ctrl_fail=$((ctrl_fail + 1))
     elif [ "$expect_pass" -eq 0 ] && [ "$got" -gt 0 ]; then
-        echo "  $p：✗ 预期 ed25519 被拒（只认 ssh-rsa），结果认证过了 —— 那行配置没在拦"
+        echo "  ${p}：✗ 预期 ed25519 被拒（只认 ssh-rsa），结果认证过了 —— 那行配置没在拦"
         ctrl_fail=$((ctrl_fail + 1))
     else
-        echo "  $p：符合预期（$([ "$expect_pass" -eq 1 ] && echo '可用' || echo '已拒')）"
+        echo "  ${p}：符合预期（$([ "$expect_pass" -eq 1 ] && echo '可用' || echo '已拒')）"
     fi
 done
 ssh-add -D >/dev/null 2>&1
@@ -176,7 +176,7 @@ ssh-add "$WORK/.ssh/id_rsa" "$WORK/.ssh/id_ed25519" >/dev/null 2>&1
 echo "== 6. 回收"
 echo "  临时 agent 里的 key（应当只有我们那两把）："
 ssh-add -l | sed 's/^/    /'
-echo "  外部 agent 仍是：$OUTER_SOCK（未被改动）"
+echo "  外部 agent 仍是：${OUTER_SOCK}（未被改动）"
 if [ "$fails" -gt 0 ] || [ "$ctrl_fail" -gt 0 ]; then
     echo "汇总：$fails 台经 agent 认证失败，$ctrl_fail 项反向对照不符预期"
     exit 1
