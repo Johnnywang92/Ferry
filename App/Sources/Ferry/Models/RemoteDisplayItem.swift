@@ -2,8 +2,12 @@ import FerryCore
 import Foundation
 
 public struct RemoteDisplayItem: Identifiable, Hashable, Sendable {
-    public var id: String { path.description }
+    public var id: String {
+        path.wireBytes.map { String(format: "%02x", $0) }.joined()
+    }
     public let name: String
+    public let rawNameBytes: [UInt8]
+    public let decodedOrigin: CharsetConverter.Decoded
     public let path: RemotePath
     public let isDirectory: Bool
     public let isSymbolicLink: Bool
@@ -12,8 +16,12 @@ public struct RemoteDisplayItem: Identifiable, Hashable, Sendable {
     public let permissionsString: String
     public let linkTarget: String?
 
+    public var isHidden: Bool {
+        rawNameBytes.first == 0x2E
+    }
+
     public init(item: RemoteItem, charsetConverter: CharsetConverter, linkResolution: RemoteDirectoryListing.LinkResolution? = nil) {
-        // 从 path.wireBytes 中提取文件名部分
+        // 从 path.wireBytes 中提取文件名部分（权威字节，不做 String 往返）
         let wire = item.path.wireBytes
         let nameBytes: [UInt8]
         if let lastSlash = wire.lastIndex(of: 0x2F), lastSlash + 1 < wire.count {
@@ -24,6 +32,8 @@ public struct RemoteDisplayItem: Identifiable, Hashable, Sendable {
             nameBytes = wire
         }
 
+        self.rawNameBytes = nameBytes
+        self.decodedOrigin = charsetConverter.decode(nameBytes)
         self.name = charsetConverter.displayString(nameBytes)
         self.path = item.path
         self.isDirectory = (item.kind == .directory)
@@ -39,9 +49,9 @@ public struct RemoteDisplayItem: Identifiable, Hashable, Sendable {
 
         if let res = linkResolution {
             if let resolved = res.resolved {
-                self.linkTarget = resolved.description
+                self.linkTarget = resolved.displayString(using: charsetConverter)
             } else if let target = res.target {
-                self.linkTarget = "\(target.description) (成环或未展开)"
+                self.linkTarget = "\(target.displayString(using: charsetConverter)) (成环或未展开)"
             } else {
                 self.linkTarget = "(无法读取软链)"
             }
@@ -62,7 +72,6 @@ public struct RemoteDisplayItem: Identifiable, Hashable, Sendable {
     }
 
     public static func formatPermissions(_ mode: UInt16, isDirectory: Bool, isLink: Bool) -> String {
-        // POSIX mode string (rwxrwxrwx)
         let chars: [(UInt16, Character)] = [
             (0o400, "r"), (0o200, "w"), (0o100, "x"),
             (0o040, "r"), (0o020, "w"), (0o010, "x"),

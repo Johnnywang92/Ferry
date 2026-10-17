@@ -1,5 +1,12 @@
 import Foundation
 
+public enum BrowserSortField: String, CaseIterable, Sendable {
+    case name
+    case modificationDate
+    case size
+    case permissions
+}
+
 public struct LocalItem: Identifiable, Hashable, Sendable {
     public var id: String { url.path }
     public let name: String
@@ -8,6 +15,10 @@ public struct LocalItem: Identifiable, Hashable, Sendable {
     public let isSymbolicLink: Bool
     public let size: Int64
     public let modificationDate: Date?
+
+    public var isHidden: Bool {
+        name.hasPrefix(".")
+    }
 
     public init(url: URL, isDirectory: Bool, isSymbolicLink: Bool = false, size: Int64 = 0, modificationDate: Date? = nil) {
         self.url = url

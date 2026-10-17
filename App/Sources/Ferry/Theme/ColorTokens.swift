@@ -21,6 +21,15 @@ public enum FerryAccentOption: String, CaseIterable, Identifiable, Sendable {
     public var color: Color {
         Color(hex: hex)
     }
+
+    public var label: String {
+        switch self {
+        case .teal: return "青绿 (Teal)"
+        case .blue: return "经典蓝 (Blue)"
+        case .green: return "森林绿 (Green)"
+        case .purple: return "鸢尾紫 (Purple)"
+        }
+    }
 }
 
 /// 设计令牌调色板（UI-REFERENCE.md 逐值照抄）

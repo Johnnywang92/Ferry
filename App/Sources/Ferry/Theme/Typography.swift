@@ -9,6 +9,7 @@ public enum FerryFont {
     /// 12px 标签、列表项次要说明
     public static let subheadline = Font.system(size: 12, weight: .regular)
     public static let subheadlineMedium = Font.system(size: 12, weight: .medium)
+    public static let subheadlineBold = Font.system(size: 12, weight: .semibold)
 
     /// 11px 小标题、侧栏分类标题、工具栏按钮说明
     public static let caption = Font.system(size: 11, weight: .regular)

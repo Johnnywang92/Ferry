@@ -3,15 +3,16 @@ import SwiftUI
 public struct SidebarView: View {
     @Binding var selectedBookmark: SiteBookmark?
     @Binding var showingNewConnection: Bool
+    @Binding var showingPreferences: Bool
     var onConnectSite: (SiteBookmark) -> Void
     var onSelectLocalLocation: (URL) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
-    @State private var sites: [SiteBookmark] = SiteBookmark.samplePresets
+    private var siteStore: SiteStore { SiteStore.shared }
     @State private var localLocations: [LocalLocation] = LocalLocation.defaults
 
     private var theme: FerryTheme {
-        ThemeManager().theme(for: colorScheme)
+        ThemeManager.shared.theme(for: colorScheme)
     }
 
     public var body: some View {
@@ -20,12 +21,25 @@ public struct SidebarView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     // 站点分组
                     VStack(alignment: .leading, spacing: 2) {
-                        HStack {
+                        HStack(spacing: 8) {
                             Text("站点")
                                 .font(FerryFont.captionBold)
                                 .foregroundColor(theme.text3)
                             Spacer()
-                            Button(action: { showingNewConnection = true }) {
+                            Button(action: {
+                                showingPreferences = true
+                            }) {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(theme.text2)
+                            }
+                            .buttonStyle(.plain)
+                            .help("从 ~/.ssh/config 导入站点")
+
+                            Button(action: {
+                                selectedBookmark = nil
+                                showingNewConnection = true
+                            }) {
                                 Image(systemName: "plus")
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundColor(theme.text2)
@@ -37,7 +51,7 @@ public struct SidebarView: View {
                         .padding(.top, 12)
                         .padding(.bottom, 4)
 
-                        ForEach(sites) { site in
+                        ForEach(siteStore.sites) { site in
                             siteRow(site)
                         }
                     }
@@ -63,18 +77,24 @@ public struct SidebarView: View {
             Divider().background(theme.line)
 
             // 底部外观模式与偏好快捷设置
-            HStack(spacing: 8) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 12))
-                    .foregroundColor(theme.text3)
-                Text("偏好设置")
-                    .font(FerryFont.caption)
-                    .foregroundColor(theme.text2)
-                Spacer()
+            Button(action: {
+                showingPreferences = true
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.text3)
+                    Text("偏好设置与导入…")
+                        .font(FerryFont.caption)
+                        .foregroundColor(theme.text2)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(theme.side)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(theme.side)
+            .buttonStyle(.plain)
         }
         .frame(width: 220)
         .background(theme.side)
@@ -104,6 +124,13 @@ public struct SidebarView: View {
 
                 Spacer()
 
+                if site.hasUnsupportedProxyJump {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(isSelected ? .white : theme.warningOrange)
+                        .help("包含 ProxyJump 跳板配置，M2 暂不支持直连")
+                }
+
                 // 协议胶囊
                 Text(site.protocolType.rawValue)
                     .font(FerryFont.micro)
@@ -127,6 +154,12 @@ public struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 8)
+        .simultaneousGesture(
+            TapGesture(count: 2).onEnded {
+                selectedBookmark = site
+                onConnectSite(site)
+            }
+        )
         .contextMenu {
             Button("连接") {
                 onConnectSite(site)
@@ -134,6 +167,13 @@ public struct SidebarView: View {
             Button("编辑…") {
                 selectedBookmark = site
                 showingNewConnection = true
+            }
+            Divider()
+            Button("删除站点", role: .destructive) {
+                if selectedBookmark?.id == site.id {
+                    selectedBookmark = nil
+                }
+                Task { await siteStore.delete(site.id) }
             }
         }
     }

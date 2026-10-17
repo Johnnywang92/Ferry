@@ -15,7 +15,7 @@ public struct ConnectionDialogView: View {
     @State private var testSuccess: Bool = false
 
     private var theme: FerryTheme {
-        ThemeManager().theme(for: colorScheme)
+        ThemeManager.shared.theme(for: colorScheme)
     }
 
     public init(isPresented: Binding<Bool>,
@@ -30,9 +30,9 @@ public struct ConnectionDialogView: View {
             protocolType: .sftp,
             host: "127.0.0.1",
             port: 2202,
-            username: "ferry",
+            username: "tester",
             authType: .password,
-            password: "ferry",
+            password: "testpass",
             remotePath: "",
             localPath: FileManager.default.homeDirectoryForCurrentUser.path
         )
@@ -43,7 +43,7 @@ public struct ConnectionDialogView: View {
         VStack(spacing: 0) {
             // 头部标题与副标题
             VStack(alignment: .leading, spacing: 4) {
-                Text("新建连接")
+                Text(initialBookmark == nil ? "新建连接" : "编辑站点")
                     .font(FerryFont.bodyBold)
                     .foregroundColor(theme.text)
                 Text("连接到 SFTP、FTP 或 FTPS 服务器。")
@@ -171,6 +171,16 @@ public struct ConnectionDialogView: View {
 
                     Divider().background(theme.line).padding(.vertical, 2)
 
+                    // 文件名字符集
+                    formRow(label: "字符集") {
+                        Picker("", selection: $bookmark.charset) {
+                            ForEach(CharsetConverter.Charset.allCases) { cs in
+                                Text(cs.displayName).tag(cs)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
                     // 远程目录
                     formRow(label: "远程目录") {
                         TextField("默认为登录目录，如 /var/www/html", text: $bookmark.remotePath)
@@ -196,6 +206,20 @@ public struct ConnectionDialogView: View {
                         }
                     }
 
+                    if let proxy = bookmark.proxyJump, !proxy.isEmpty {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(theme.warningOrange)
+                            Text("该站点配置了 ProxyJump (\(proxy))，M2 暂不支持代理跳板直连。")
+                                .font(FerryFont.caption)
+                                .foregroundColor(theme.warningOrange)
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(theme.field)
+                        .cornerRadius(FerryRadius.r4)
+                    }
+
                     // 测试结果提示
                     if let result = testResult {
                         HStack(spacing: 8) {
@@ -214,7 +238,7 @@ public struct ConnectionDialogView: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
             }
-            .frame(maxHeight: 460)
+            .frame(maxHeight: 480)
 
             Divider().background(theme.line)
 
@@ -238,9 +262,24 @@ public struct ConnectionDialogView: View {
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("连接") {
+                Button("保存") {
+                    var toSave = bookmark
+                    if toSave.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        toSave.name = toSave.host
+                    }
+                    Task { await SiteStore.shared.upsert(toSave) }
                     isPresented = false
-                    onConnect(bookmark)
+                }
+                .disabled(bookmark.host.isEmpty)
+
+                Button("连接") {
+                    var toConnect = bookmark
+                    if toConnect.name.trimmingCharacters(in: .whitespaces).isEmpty {
+                        toConnect.name = toConnect.host
+                    }
+                    Task { await SiteStore.shared.upsert(toConnect) }
+                    isPresented = false
+                    onConnect(toConnect)
                 }
                 .keyboardShortcut(.defaultAction)
                 .buttonStyle(.borderedProminent)
@@ -283,7 +322,7 @@ public struct ConnectionDialogView: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
-            bookmark.localPath = url.path
+            bookmark.localBookmark = ScopedBookmark(url: url, includeBookmarkData: true)
         }
     }
 

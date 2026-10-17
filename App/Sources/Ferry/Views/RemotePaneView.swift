@@ -1,17 +1,60 @@
+import AppKit
 import FerryCore
 import SwiftUI
 
 public struct RemotePaneView: View {
     @Binding var selectedIDs: Set<String>
     @Binding var showingNewConnection: Bool
+    var searchText: String
+    var onDownloadSelected: () -> Void
+    var onNewRemoteFolder: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     private var connectionService: ConnectionService { ConnectionService.shared }
+    private var themeManager: ThemeManager { ThemeManager.shared }
 
+    @State private var sortField: BrowserSortField = .name
     @State private var sortAscending: Bool = true
+    @State private var isEditingPath: Bool = false
+    @State private var editedPathText: String = ""
 
     private var theme: FerryTheme {
-        ThemeManager().theme(for: colorScheme)
+        themeManager.theme(for: colorScheme)
+    }
+
+    private var displayedItems: [RemoteDisplayItem] {
+        let filteredByHidden = connectionService.remoteItems.filter { themeManager.showHiddenFiles || !$0.isHidden }
+        let filtered: [RemoteDisplayItem]
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            filtered = filteredByHidden
+        } else {
+            filtered = filteredByHidden.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
+        }
+        return filtered.sorted { lhs, rhs in
+            if lhs.isDirectory != rhs.isDirectory {
+                return lhs.isDirectory
+            }
+            let cmp: ComparisonResult
+            switch sortField {
+            case .name:
+                cmp = lhs.name.localizedStandardCompare(rhs.name)
+            case .modificationDate:
+                let lDate = lhs.mtime ?? .distantPast
+                let rDate = rhs.mtime ?? .distantPast
+                cmp = lDate == rDate ? .orderedSame : (lDate < rDate ? .orderedAscending : .orderedDescending)
+            case .size:
+                let lSize = lhs.size ?? 0
+                let rSize = rhs.size ?? 0
+                cmp = lSize == rSize ? .orderedSame : (lSize < rSize ? .orderedAscending : .orderedDescending)
+            case .permissions:
+                cmp = lhs.permissionsString.compare(rhs.permissionsString)
+            }
+            if cmp == .orderedSame {
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+            return sortAscending ? (cmp == .orderedAscending) : (cmp == .orderedDescending)
+        }
     }
 
     public var body: some View {
@@ -27,30 +70,64 @@ public struct RemotePaneView: View {
                     .foregroundColor(.white)
                     .cornerRadius(FerryRadius.r3)
 
-                // 路径栏
-                HStack(spacing: 4) {
-                    Image(systemName: "network")
-                        .font(.system(size: 11))
-                        .foregroundColor(theme.text3)
-                    Text(currentRemotePathString)
+                // 路径栏（支持点击直接输入远程路径跳转）
+                if isEditingPath && isConnected {
+                    TextField("输入远程路径…", text: $editedPathText)
+                        .textFieldStyle(.plain)
                         .font(FerryFont.monoSmall)
                         .foregroundColor(theme.text)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(theme.field)
+                        .cornerRadius(FerryRadius.r4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: FerryRadius.r4)
+                                .stroke(theme.accentColor, lineWidth: 1)
+                        )
+                        .onSubmit {
+                            let target = editedPathText
+                            isEditingPath = false
+                            Task {
+                                try? await connectionService.navigateRemote(toPathString: target)
+                                selectedIDs.removeAll()
+                            }
+                        }
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "network")
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.text3)
+                        Text(currentRemotePathString)
+                            .font(FerryFont.monoSmall)
+                            .foregroundColor(theme.text)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(theme.panel)
+                    .cornerRadius(FerryRadius.r4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: FerryRadius.r4)
+                            .stroke(theme.line, lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if isConnected {
+                            editedPathText = currentRemotePathString
+                            isEditingPath = true
+                        }
+                    }
+                    .help(isConnected ? "点击直接输入远程路径，或按 ⌘⇧G 前往文件夹" : "连接后可浏览远程路径")
                 }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(theme.panel)
-                .cornerRadius(FerryRadius.r4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: FerryRadius.r4)
-                        .stroke(theme.line, lineWidth: 1)
-                )
 
                 // 返回上一级
                 Button(action: {
-                    Task { await connectionService.navigateRemoteUp() }
+                    Task {
+                        await connectionService.navigateRemoteUp()
+                        selectedIDs.removeAll()
+                    }
                 }) {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 11, weight: .semibold))
@@ -88,32 +165,19 @@ public struct RemotePaneView: View {
                 alignment: .bottom
             )
 
-            // 表头：名称 ↑ / 修改时间 / 大小 / 权限
+            // 表头：名称 / 修改时间 / 大小 / 权限（支持点击排序）
             HStack(spacing: 0) {
-                HStack(spacing: 4) {
-                    Text("名称")
-                        .font(FerryFont.captionBold)
-                        .foregroundColor(theme.text2)
-                    Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
-                        .font(.system(size: 9))
-                        .foregroundColor(theme.text3)
-                }
-                .padding(.leading, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                columnHeader(title: "名称", field: .name, alignment: .leading)
+                    .padding(.leading, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("修改时间")
-                    .font(FerryFont.captionBold)
-                    .foregroundColor(theme.text2)
+                columnHeader(title: "修改时间", field: .modificationDate, alignment: .leading)
                     .frame(width: 120, alignment: .leading)
 
-                Text("大小")
-                    .font(FerryFont.captionBold)
-                    .foregroundColor(theme.text2)
+                columnHeader(title: "大小", field: .size, alignment: .trailing)
                     .frame(width: 75, alignment: .trailing)
 
-                Text("权限")
-                    .font(FerryFont.captionBold)
-                    .foregroundColor(theme.text2)
+                columnHeader(title: "权限", field: .permissions, alignment: .center)
                     .frame(width: 90, alignment: .center)
                     .padding(.trailing, 12)
             }
@@ -132,14 +196,58 @@ public struct RemotePaneView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
-                        ForEach(connectionService.remoteItems) { item in
+                        ForEach(displayedItems) { item in
                             remoteRow(item)
                         }
                     }
                 }
                 .background(theme.bg)
+                .contextMenu {
+                    Button("新建远程文件夹…") {
+                        onNewRemoteFolder()
+                    }
+                    Button(themeManager.showHiddenFiles ? "隐藏以 . 开头的隐藏文件" : "显示隐藏文件") {
+                        themeManager.toggleHiddenFiles()
+                    }
+                    Menu("文件名字符集 (\(connectionService.currentCharset.displayName))") {
+                        ForEach(CharsetConverter.Charset.allCases) { cs in
+                            Button(cs.displayName) {
+                                connectionService.setCharset(cs)
+                            }
+                        }
+                    }
+                    Button("刷新") {
+                        Task { await connectionService.refreshRemote() }
+                    }
+                }
             }
         }
+    }
+
+    private func columnHeader(title: String, field: BrowserSortField, alignment: Alignment) -> some View {
+        Button(action: {
+            if sortField == field {
+                sortAscending.toggle()
+            } else {
+                sortField = field
+                sortAscending = true
+            }
+        }) {
+            HStack(spacing: 4) {
+                if alignment == .trailing || alignment == .center { Spacer(minLength: 0) }
+                Text(title)
+                    .font(FerryFont.captionBold)
+                    .foregroundColor(sortField == field ? theme.text : theme.text2)
+                if sortField == field {
+                    Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(theme.accentColor)
+                }
+                if alignment == .leading || alignment == .center { Spacer(minLength: 0) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var isConnected: Bool {
@@ -192,7 +300,7 @@ public struct RemotePaneView: View {
 
                 Text(item.name)
                     .font(FerryFont.subheadline)
-                    .foregroundColor(isSelected ? .white : theme.text)
+                    .foregroundColor(isSelected ? .white : (item.isHidden ? theme.text2 : theme.text))
                     .lineLimit(1)
 
                 if let target = item.linkTarget {
@@ -247,5 +355,30 @@ public struct RemotePaneView: View {
                 }
             }
         )
+        .contextMenu {
+            if !item.isDirectory {
+                Button("下载到当前本地目录") {
+                    selectedIDs = [item.id]
+                    onDownloadSelected()
+                }
+                Divider()
+            } else {
+                Button("打开远程文件夹") {
+                    Task {
+                        await connectionService.navigateRemote(to: item.path)
+                        selectedIDs.removeAll()
+                    }
+                }
+                Divider()
+            }
+            Button("复制远程路径") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(item.path.description, forType: .string)
+            }
+            Divider()
+            Button("新建远程文件夹…") {
+                onNewRemoteFolder()
+            }
+        }
     }
 }

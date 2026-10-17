@@ -3,11 +3,16 @@ import SwiftUI
 
 public struct MainWindowView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @State private var themeManager = ThemeManager()
-    @State private var connectionService = ConnectionService.shared
+    private var themeManager: ThemeManager { ThemeManager.shared }
+    private var connectionService: ConnectionService { ConnectionService.shared }
 
     @State private var selectedBookmark: SiteBookmark?
     @State private var showingNewConnection: Bool = false
+    @State private var showingPreferences: Bool = false
+    @State private var showingGoToFolder: Bool = false
+    @State private var showingNewFolderSheet: Bool = false
+    @State private var newFolderName: String = ""
+    @State private var newFolderTargetIsRemote: Bool = false
     @State private var searchText: String = ""
 
     // 本地路径与选择
@@ -28,10 +33,19 @@ public struct MainWindowView: View {
             // 顶部工具栏（56px）
             ToolbarView(
                 showingNewConnection: $showingNewConnection,
+                showingGoToFolder: $showingGoToFolder,
                 searchText: $searchText,
                 onUpload: handleUpload,
                 onDownload: handleDownload,
-                onNewFolder: handleNewFolder,
+                onNewFolder: {
+                    if case .connected = connectionService.state {
+                        newFolderTargetIsRemote = true
+                    } else {
+                        newFolderTargetIsRemote = false
+                    }
+                    newFolderName = ""
+                    showingNewFolderSheet = true
+                },
                 onRefresh: handleRefresh,
                 onDisconnect: handleDisconnect
             )
@@ -42,8 +56,9 @@ public struct MainWindowView: View {
                 SidebarView(
                     selectedBookmark: $selectedBookmark,
                     showingNewConnection: $showingNewConnection,
+                    showingPreferences: $showingPreferences,
                     onConnectSite: { site in
-                        Task { await connectionService.connect(to: site) }
+                        connectToSite(site)
                     },
                     onSelectLocalLocation: { url in
                         currentLocalURL = url
@@ -56,31 +71,75 @@ public struct MainWindowView: View {
                     currentLocalURL: $currentLocalURL,
                     selectedLocalIDs: $selectedLocalIDs,
                     selectedRemoteIDs: $selectedRemoteIDs,
-                    showingNewConnection: $showingNewConnection
+                    showingNewConnection: $showingNewConnection,
+                    searchText: searchText,
+                    onUploadSelected: handleUpload,
+                    onDownloadSelected: handleDownload,
+                    onNewLocalFolder: {
+                        newFolderTargetIsRemote = false
+                        newFolderName = ""
+                        showingNewFolderSheet = true
+                    },
+                    onNewRemoteFolder: {
+                        newFolderTargetIsRemote = true
+                        newFolderName = ""
+                        showingNewFolderSheet = true
+                    }
                 )
             }
 
             // 底部状态栏（26px）
             StatusBarView(
                 localSelectedCount: selectedLocalIDs.count,
-                localTotalCount: (try? LocalFileSystemService.shared.listContents(at: currentLocalURL).count) ?? 0,
+                localTotalCount: (try? LocalFileSystemService.shared.listContents(
+                    at: currentLocalURL,
+                    showHidden: themeManager.showHiddenFiles
+                ).count) ?? 0,
                 remoteSelectedCount: selectedRemoteIDs.count,
-                remoteTotalCount: connectionService.remoteItems.count
+                remoteTotalCount: connectionService.remoteItems.filter {
+                    themeManager.showHiddenFiles || !$0.isHidden
+                }.count
             )
         }
         .frame(minWidth: 960, minHeight: 600)
         .background(theme.bg)
         .preferredColorScheme(themeManager.preferredColorScheme)
-        // 新建连接弹窗
+        // 新建/编辑连接弹窗
         .sheet(isPresented: $showingNewConnection) {
             ConnectionDialogView(
                 isPresented: $showingNewConnection,
                 initialBookmark: selectedBookmark,
                 onConnect: { bookmark in
                     selectedBookmark = bookmark
-                    Task { await connectionService.connect(to: bookmark) }
+                    connectToSite(bookmark)
                 }
             )
+        }
+        // 偏好设置与 SSH 导入弹窗
+        .sheet(isPresented: $showingPreferences) {
+            PreferencesSheetView(isPresented: $showingPreferences)
+        }
+        // 前往文件夹弹窗 (⌘⇧G)
+        .sheet(isPresented: $showingGoToFolder) {
+            GoToFolderDialog(
+                isPresented: $showingGoToFolder,
+                isRemoteConnected: isRemoteConnected,
+                initialLocalPath: currentLocalURL.path,
+                initialRemotePath: connectionService.currentRemotePath?.description ?? "/",
+                onGoLocal: { rawPath in
+                    let resolved = try LocalFileSystemService.shared.resolvePath(rawPath, relativeTo: currentLocalURL)
+                    currentLocalURL = resolved
+                    selectedLocalIDs.removeAll()
+                },
+                onGoRemote: { remotePath in
+                    try await connectionService.navigateRemote(toPathString: remotePath)
+                    selectedRemoteIDs.removeAll()
+                }
+            )
+        }
+        // 新建文件夹弹窗
+        .sheet(isPresented: $showingNewFolderSheet) {
+            newFolderDialog
         }
         // TOFU 主机密钥询问弹窗
         .sheet(isPresented: Binding(
@@ -91,6 +150,23 @@ public struct MainWindowView: View {
                 HostKeyPromptDialog(question: question) { decision in
                     connectionService.resolveHostKeyDecision(decision)
                 }
+            }
+        }
+        // 主机密钥变更阻断与自助移除弹窗
+        .sheet(isPresented: Binding(
+            get: { connectionService.pendingHostKeyMismatch != nil },
+            set: { if !$0 { connectionService.dismissHostKeyMismatch() } }
+        )) {
+            if let alert = connectionService.pendingHostKeyMismatch {
+                HostKeyMismatchDialog(
+                    alert: alert,
+                    onDismiss: {
+                        connectionService.dismissHostKeyMismatch()
+                    },
+                    onRemoveAndReconnect: {
+                        Task { await connectionService.removeMismatchedHostKeyAndReconnect() }
+                    }
+                )
             }
         }
         // 键盘交互认证弹窗
@@ -105,24 +181,110 @@ public struct MainWindowView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .ferryOpenNewConnection)) { _ in
+            selectedBookmark = nil
             showingNewConnection = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryOpenGoToFolder)) { _ in
+            showingGoToFolder = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryToggleHiddenFiles)) { _ in
+            themeManager.toggleHiddenFiles()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryOpenPreferences)) { _ in
+            showingPreferences = true
+        }
+    }
+
+    private var isRemoteConnected: Bool {
+        if case .connected = connectionService.state { return true }
+        return false
+    }
+
+    private var newFolderDialog: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(newFolderTargetIsRemote ? "新建远程文件夹" : "新建本地文件夹")
+                .font(FerryFont.bodyBold)
+                .foregroundColor(theme.text)
+
+            if isRemoteConnected {
+                Picker("位置", selection: $newFolderTargetIsRemote) {
+                    Text("本地 (\(currentLocalURL.lastPathComponent))").tag(false)
+                    Text("远程 (\(connectionService.currentRemotePath?.description ?? "/"))").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
+
+            TextField("文件夹名称", text: $newFolderName)
+                .textFieldStyle(.roundedBorder)
+                .font(FerryFont.body)
+                .onSubmit {
+                    confirmCreateFolder()
+                }
+
+            HStack {
+                Button("取消") {
+                    showingNewFolderSheet = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("创建") {
+                    confirmCreateFolder()
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .tint(theme.accentColor)
+                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
+        .background(theme.bg)
+    }
+
+    private func confirmCreateFolder() {
+        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        showingNewFolderSheet = false
+        if newFolderTargetIsRemote {
+            Task {
+                await connectionService.createRemoteFolder(named: name)
+            }
+        } else {
+            _ = try? LocalFileSystemService.shared.createDirectory(named: name, in: currentLocalURL)
+            NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
+        }
+    }
+
+    private func connectToSite(_ site: SiteBookmark) {
+        let resolved = site.localBookmark.resolveURL()
+        if FileManager.default.fileExists(atPath: resolved.url.path) {
+            currentLocalURL = resolved.url
+            selectedLocalIDs.removeAll()
+        }
+        Task {
+            await connectionService.connect(to: site)
         }
     }
 
     private func handleUpload() {
-        // M1'-6 / M3 传输对接
+        let urls = selectedLocalIDs.map { URL(fileURLWithPath: $0) }
+        guard !urls.isEmpty else { return }
+        connectionService.uploadFiles(urls)
     }
 
     private func handleDownload() {
-        // M1'-6 / M3 传输对接
-    }
-
-    private func handleNewFolder() {
-        // 创建新文件夹操作
+        let chosen = connectionService.remoteItems.filter { selectedRemoteIDs.contains($0.id) }
+        guard !chosen.isEmpty else { return }
+        let destDir = currentLocalURL
+        connectionService.downloadItems(chosen, to: destDir) {
+            NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
+        }
     }
 
     private func handleRefresh() {
-        // 刷新本地与远端
+        NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
         Task {
             await connectionService.refreshRemote()
         }
@@ -131,6 +293,7 @@ public struct MainWindowView: View {
     private func handleDisconnect() {
         Task {
             await connectionService.disconnect()
+            selectedRemoteIDs.removeAll()
         }
     }
 }

@@ -12,10 +12,52 @@ public enum FerryAppearanceMode: String, CaseIterable, Identifiable, Sendable {
 @Observable
 @MainActor
 public final class ThemeManager {
-    public var appearanceMode: FerryAppearanceMode = .auto
-    public var accentOption: FerryAccentOption = .teal
+    public static let shared = ThemeManager()
 
-    public init() {}
+    private static let appearanceKey = "dev.ferry.app.appearanceMode"
+    private static let accentKey = "dev.ferry.app.accentOption"
+    private static let showHiddenKey = "dev.ferry.app.showHiddenFiles"
+
+    public var appearanceMode: FerryAppearanceMode {
+        didSet {
+            UserDefaults.standard.set(appearanceMode.rawValue, forKey: Self.appearanceKey)
+        }
+    }
+
+    public var accentOption: FerryAccentOption {
+        didSet {
+            UserDefaults.standard.set(accentOption.rawValue, forKey: Self.accentKey)
+        }
+    }
+
+    /// 隐藏文件显示开关（v2.3 §356：服务器上 `.env`、`.git`、`.htaccess` 是刚需，默认显示）。
+    public var showHiddenFiles: Bool {
+        didSet {
+            UserDefaults.standard.set(showHiddenFiles, forKey: Self.showHiddenKey)
+        }
+    }
+
+    public init() {
+        if let rawAppearance = UserDefaults.standard.string(forKey: Self.appearanceKey),
+           let mode = FerryAppearanceMode(rawValue: rawAppearance) {
+            self.appearanceMode = mode
+        } else {
+            self.appearanceMode = .auto
+        }
+
+        if let rawAccent = UserDefaults.standard.string(forKey: Self.accentKey),
+           let accent = FerryAccentOption(rawValue: rawAccent) {
+            self.accentOption = accent
+        } else {
+            self.accentOption = .teal
+        }
+
+        if UserDefaults.standard.object(forKey: Self.showHiddenKey) != nil {
+            self.showHiddenFiles = UserDefaults.standard.bool(forKey: Self.showHiddenKey)
+        } else {
+            self.showHiddenFiles = true
+        }
+    }
 
     public func theme(for colorScheme: ColorScheme) -> FerryTheme {
         let isDark: Bool
@@ -36,5 +78,9 @@ public final class ThemeManager {
         case .light: return .light
         case .dark: return .dark
         }
+    }
+
+    public func toggleHiddenFiles() {
+        showHiddenFiles.toggle()
     }
 }

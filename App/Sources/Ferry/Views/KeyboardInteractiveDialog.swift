@@ -9,7 +9,7 @@ public struct KeyboardInteractiveDialog: View {
     @State private var answers: [String]
 
     private var theme: FerryTheme {
-        ThemeManager().theme(for: colorScheme)
+        ThemeManager.shared.theme(for: colorScheme)
     }
 
     public init(request: KeyboardInteractiveRequest, onResponse: @escaping ([String]?) -> Void) {

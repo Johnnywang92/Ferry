@@ -3,6 +3,7 @@ import SwiftUI
 
 public struct ToolbarView: View {
     @Binding var showingNewConnection: Bool
+    @Binding var showingGoToFolder: Bool
     @Binding var searchText: String
     var onUpload: () -> Void
     var onDownload: () -> Void
@@ -12,9 +13,10 @@ public struct ToolbarView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     private var connectionService: ConnectionService { ConnectionService.shared }
+    private var themeManager: ThemeManager { ThemeManager.shared }
 
     private var theme: FerryTheme {
-        ThemeManager().theme(for: colorScheme)
+        themeManager.theme(for: colorScheme)
     }
 
     public var body: some View {
@@ -34,7 +36,7 @@ public struct ToolbarView: View {
                 .frame(height: 28)
                 .background(theme.barLine)
 
-            // 中间主要动作按钮组（上传 / 下载 / 新建文件夹 / 刷新 / 同步 / 断开连接）
+            // 中间主要动作按钮组（上传 / 下载 / 新建文件夹 / 前往 / 隐藏文件 / 刷新 / 断开连接）
             HStack(spacing: 4) {
                 toolbarButton(icon: "arrow.up.circle", label: "上传", action: onUpload)
                     .disabled(!isConnected)
@@ -43,7 +45,16 @@ public struct ToolbarView: View {
                     .disabled(!isConnected)
 
                 toolbarButton(icon: "folder.badge.plus", label: "新建文件夹", action: onNewFolder)
-                    .disabled(!isConnected)
+
+                toolbarButton(icon: "folder.badge.gearshape", label: "前往路径", action: { showingGoToFolder = true })
+                    .help("前往文件夹 (⌘⇧G)")
+
+                toolbarButton(
+                    icon: themeManager.showHiddenFiles ? "eye" : "eye.slash",
+                    label: themeManager.showHiddenFiles ? "隐藏文件" : "显示隐藏",
+                    action: { themeManager.toggleHiddenFiles() }
+                )
+                .help("切换显示以 . 开头的隐藏文件 (⌘⇧.)")
 
                 toolbarButton(icon: "arrow.clockwise", label: "刷新", action: onRefresh)
 
@@ -63,15 +74,23 @@ public struct ToolbarView: View {
             // 右侧：连接状态胶囊
             connectionCapsule
 
-            // 搜索框
+            // 搜索框（同时过滤本地与远端当前目录，零网络往返）
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
                     .foregroundColor(theme.text3)
-                TextField("搜索文件…", text: $searchText)
+                TextField("过滤当前目录…", text: $searchText)
                     .textFieldStyle(.plain)
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text)
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.text3)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)

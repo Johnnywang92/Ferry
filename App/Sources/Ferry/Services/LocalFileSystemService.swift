@@ -45,4 +45,37 @@ public final class LocalFileSystemService: Sendable {
             return a.name.localizedStandardCompare(b.name) == .orderedAscending
         }
     }
+
+    public func createDirectory(named name: String, in parentURL: URL) throws -> URL {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("/") else {
+            throw NSError(domain: "dev.ferry.app", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "文件夹名称不能为空且不能包含 '/'"
+            ])
+        }
+        let target = parentURL.appendingPathComponent(trimmed, isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+        return target
+    }
+
+    public func resolvePath(_ rawPath: String, relativeTo baseURL: URL) throws -> URL {
+        let trimmed = rawPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return baseURL }
+
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        let targetURL: URL
+        if expanded.hasPrefix("/") {
+            targetURL = URL(fileURLWithPath: expanded).standardizedFileURL
+        } else {
+            targetURL = baseURL.appendingPathComponent(expanded).standardizedFileURL
+        }
+
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: targetURL.path, isDirectory: &isDir) else {
+            throw NSError(domain: "dev.ferry.app", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: "本地路径不存在：\(targetURL.path)"
+            ])
+        }
+        return isDir.boolValue ? targetURL : targetURL.deletingLastPathComponent()
+    }
 }
