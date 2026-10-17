@@ -11,12 +11,14 @@ let package = Package(
     name: "FerryApp",
     platforms: [.macOS(.v15)],
     dependencies: [
+        .package(path: "../Packages/Core"),
         .package(path: "../Packages/Backends")
     ],
     targets: [
         .executableTarget(
             name: "Ferry",
             dependencies: [
+                .product(name: "FerryCore", package: "Core"),
                 .product(name: "FerrySSHShim", package: "Backends"),
                 .product(name: "FerryBackendsSFTP", package: "Backends")
             ],

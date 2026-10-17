@@ -48,7 +48,7 @@ ts_flags=()
 [[ "$IDENTITY" != "-" ]] && ts_flags+=(--timestamp)
 
 BIN=$(swift build --package-path "$HERE" -c "$CONFIG" --show-bin-path)/Ferry
-echo "== 1. 构建可执行体（$CONFIG）"
+echo "== 1. 构建可执行体（${CONFIG}）"
 if [[ "$NO_REBUILD" == "0" ]]; then
     swift build --package-path "$HERE" -c "$CONFIG" >/dev/null
 fi
@@ -62,6 +62,8 @@ cp "$BIN" "$APP/Contents/MacOS/Ferry"
 chmod +x "$APP/Contents/MacOS/Ferry"
 sed "s/__BUNDLE_ID__/$BUNDLE_ID/" "$HERE/Support/Info.plist.in" > "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
+[[ -f "$HERE/Support/AppIcon.icns" ]] && cp "$HERE/Support/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+[[ -f "$HERE/Support/AppIcon.png" ]] && cp "$HERE/Support/AppIcon.png" "$APP/Contents/Resources/AppIcon.png"
 echo "  $APP  bundle id=$BUNDLE_ID"
 
 echo "== 3. 由内向外签名（不用 --deep）"
@@ -108,13 +110,13 @@ echo "== 6. 启动：open（走 LaunchServices，才算『产物可启动』）"
 STAMP="${FERRY_STAMP:-/tmp/ferry-launch-stamp.txt}"
 rm -f "$STAMP"
 set +e
-open -W -n "$APP" 2>/tmp/ferry-open.err
+open -W -n "$APP" --args --probe 2>/tmp/ferry-open.err
 OPEN_RC=$?
 set -e
 if [[ -f "$STAMP" ]]; then
-    echo "  open rc=$OPEN_RC，探针确实跑过：$(cat "$STAMP")"
+    echo "  open rc=${OPEN_RC}，探针确实跑过：$(cat "$STAMP")"
 else
-    echo "  open rc=$OPEN_RC，但没有启动戳 —— 进程没被拉起来（或被静默拦了）"
+    echo "  open rc=${OPEN_RC}，但没有启动戳 —— 进程没被拉起来（或被静默拦了）"
     sed 's/^/    /' /tmp/ferry-open.err
 fi
 
@@ -129,7 +131,7 @@ rm -rf "$GQ_DIR"; mkdir -p "$GQ_DIR"
 launch_copy() {           # $1=要 open 的 bundle，$2=人话标签
     rm -f "$STAMP"
     set +e
-    open -W -n "$1" 2>"$ERR_LOG" &
+    open -W -n "$1" --args --probe 2>"$ERR_LOG" &
     local p=$! watched=0
     while kill -0 "$p" 2>/dev/null && [[ $watched -lt 25 ]]; do sleep 1; watched=$((watched + 1)); done
     if kill -0 "$p" 2>/dev/null; then
@@ -139,9 +141,9 @@ launch_copy() {           # $1=要 open 的 bundle，$2=人话标签
     wait "$p"; local rc=$?
     set -e
     if [[ -f "$STAMP" ]]; then
-        echo "  $2：open rc=$rc，有启动戳 → 跑起来了"; echo "RAN"
+        echo "  $2：open rc=${rc}，有启动戳 → 跑起来了"; echo "RAN"
     else
-        echo "  $2：open rc=$rc，无启动戳 → 没跑起来"; sed 's/^/    err: /' "$ERR_LOG" | head -3; echo "BLOCKED"
+        echo "  $2：open rc=${rc}，无启动戳 → 没跑起来"; sed 's/^/    err: /' "$ERR_LOG" | head -3; echo "BLOCKED"
     fi
 }
 cp -R "$APP" "$GQ_DIR/"
@@ -171,5 +173,5 @@ rm -rf "$GQ_DIR" "$CTL_DIR"
 
 echo "== 结论"
 echo "  macOS $(sw_vers -productVersion)（$(sw_vers -buildVersion)），spctl --status：$(spctl --status 2>&1 | tr -d '\n')"
-echo "  探针 $PROBE_RC，open $OPEN_RC，隔离位副本 $GQ_VERDICT，无签名对照组 $CTL_VERDICT，日志 $PROBE_LOG"
+echo "  探针 ${PROBE_RC}，open ${OPEN_RC}，隔离位副本 ${GQ_VERDICT}，无签名对照组 ${CTL_VERDICT}，日志 ${PROBE_LOG}"
 [[ $PROBE_RC -eq 0 ]] || exit $PROBE_RC

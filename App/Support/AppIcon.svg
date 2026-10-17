@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- macOS 规范背板渐变：深空黑曜石漫反射 -->
+    <radialGradient id="ferry-bg" cx="50%" cy="25%" r="85%">
+      <stop offset="0%" stop-color="#1F2430"/>
+      <stop offset="60%" stop-color="#12151C"/>
+      <stop offset="100%" stop-color="#08090C"/>
+    </radialGradient>
+
+    <!-- 上行轨（Local）：冷轧钛白金属质感 -->
+    <linearGradient id="rail-upload" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#8E9AA8"/>
+      <stop offset="45%" stop-color="#DCE3EB"/>
+      <stop offset="100%" stop-color="#FFFFFF"/>
+    </linearGradient>
+
+    <!-- 下行轨（Remote）：极频电光青流体 -->
+    <linearGradient id="rail-download" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00F5D4"/>
+      <stop offset="55%" stop-color="#00A8E8"/>
+      <stop offset="100%" stop-color="#003459"/>
+    </linearGradient>
+
+    <!-- 侧壁遮蔽阴影（制造立体浮空感） -->
+    <filter id="chassis-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="32" stdDeviation="36" flood-color="#000000" flood-opacity="0.75"/>
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+
+    <!-- 电光青散射辉光（微弱光晕，提升通透度） -->
+    <filter id="neon-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="24" flood-color="#00F5D4" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- 1. macOS 标准连续曲率圆角背板 -->
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#ferry-bg)"/>
+  
+  <!-- 背板顶部物理高光边缘（Rim Light） -->
+  <rect x="65" y="65" width="894" height="894" rx="199" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="2"/>
+  <rect x="65" y="65" width="894" height="894" rx="199" fill="none" stroke="#000000" stroke-opacity="0.5" stroke-width="2" style="mix-blend-mode: multiply;"/>
+
+  <!-- 2. 主体几何组（带全局物理下沉投影） -->
+  <g filter="url(#chassis-shadow)">
+
+    <!-- 左轨：上行数据流（钛白合金一体化光刃） -->
+    <!-- 坐标经贝塞尔曲线倒角，彻底杜绝机械尖角撕裂感 -->
+    <path d="M 308 748 
+             L 512 238 Q 520 218 528 230 
+             L 582 308 Q 590 320 576 320 
+             L 538 320 Q 526 320 522 332 
+             L 394 748 Q 388 760 374 760 
+             L 318 760 Q 302 760 308 748 Z" 
+          fill="url(#rail-upload)"/>
+
+    <!-- 左轨精密受光面倒角切线（增强数控削切感） -->
+    <path d="M 314 744 L 514 238" 
+          fill="none" stroke="#FFFFFF" stroke-opacity="0.8" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- 右轨：下行数据流（电光青极速流道，带局部透光滤波） -->
+    <!-- 严格以 (512, 512) 点对称翻转 -->
+    <g filter="url(#neon-glow)">
+      <path d="M 716 276 
+               L 512 786 Q 504 806 496 794 
+               L 442 716 Q 434 704 448 704 
+               L 486 704 Q 498 704 502 692 
+               L 630 276 Q 636 264 650 264 
+               L 706 264 Q 722 264 716 276 Z" 
+            fill="url(#rail-download)"/>
+
+      <!-- 右轨内缘流光切刃线 -->
+      <path d="M 710 280 L 510 786" 
+            fill="none" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="3" stroke-linecap="round"/>
+    </g>
+
+    <!-- 3. 中枢协议握手节点（Synapse Handshake Node） -->
+    <!-- 位于双轨交汇中心 (512, 512) 的负空间桥接指示器 -->
+    <g transform="translate(512, 512)">
+      <!-- 贯穿微缝 -->
+      <line x1="-36" y1="0" x2="36" y2="0" stroke="#00F5D4" stroke-opacity="0.3" stroke-width="4" stroke-linecap="round"/>
+      <!-- 连接核心点 -->
+      <circle cx="0" cy="0" r="10" fill="#00F5D4"/>
+      <circle cx="0" cy="0" r="18" fill="none" stroke="#00F5D4" stroke-opacity="0.4" stroke-width="2"/>
+    </g>
+
+  </g>
+</svg>
