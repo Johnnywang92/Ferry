@@ -12,28 +12,48 @@ public struct TransferProgress: Sendable, Hashable {
     public let chunks: Int
     /// 收尾那一次：EOF 或写完必发，不看节流间隔。UI 靠它把进度条落定。
     public let isFinal: Bool
+
+    public init(bytesDone: Int64, totalBytes: Int64?, chunks: Int, isFinal: Bool) {
+        self.bytesDone = bytesDone
+        self.totalBytes = totalBytes
+        self.chunks = chunks
+        self.isFinal = isFinal
+    }
 }
 
-/// 单文件上下传的泵（M1'-6）。
+/// 传输执行结果（M3）。
+public struct TransferExecutionResult: Sendable, Equatable {
+    public let bytesTransferred: Int64
+    public let totalBytes: Int64?
+    public let confidence: ResumeConfidence
+    public let finalSnapshot: ResumeSnapshot?
+
+    public init(bytesTransferred: Int64, totalBytes: Int64?, confidence: ResumeConfidence, finalSnapshot: ResumeSnapshot?) {
+        self.bytesTransferred = bytesTransferred
+        self.totalBytes = totalBytes
+        self.confidence = confidence
+        self.finalSnapshot = finalSnapshot
+    }
+}
+
+/// 传输泵（M1'-6 / M3）。
 ///
-/// 这一层刻意不知道"临时文件""断点续传""冲突策略"这三件事——它们分属 M3/M3/M4
-/// （v2.3 的分层），本轮的出口标准只有"单文件上下传可用"。这里要成立的是四件小事：
-/// chunk 大小、进度节流、取消怎么落到句柄、错误怎么分出去。
-///
-/// 本地磁盘走同步 `FileHandle`，一次一 chunk。调用方不要在 main actor 上跑它：
-/// 每 chunk 的读写阻塞时间是真实的（本机实测见 docs/spike/M1-06 §3）。
+/// 核心纪律：
+/// 1. 下载：先写 `<target>.part` 临时文件，完成后原子 replace/rename 到目标路径；
+///    暂停保留 `.part`，取消删除 `.part`。
+/// 2. 上传：写 `<remote>.part-<uuid>`，校验通过后原子覆盖 rename 到目标；
+/// 3. 续传置信度双采样校验（v2.3 §334）：`mtimeIsReliable == false` 时禁用上传续传；
+///    下载续传校验远端 size 必须匹配或大于本地已传 offset；
+/// 4. 限速接入：泵循环每 chunk 消费 RateLimiter 配额；
+/// 5. 取消响应：长循环内部检查 Task.isCancelled 与 CancellationFlag，200ms 内退出。
 public enum TransferEngine {
-    /// 一个 chunk 的字节数：ADR-0000 I1 与 v2.3 传输层钉的那个 256 KB。
-    ///
-    /// 上下传共用这一个数。libssh2 会把它再拆成 `MAX_SFTP_READ_SIZE`/
-    /// `MAX_SFTP_OUTGOING_SIZE`（各 30000 字节，`sftp.h:47,52`）那么多个包，
-    /// 所以 chunk 越大、在途包越多、往返摊得越薄；代价是内存占用与取消粒度。
+    /// 一个 chunk 的字节数：ADR-0000 I1 与 v2.3 传输层钉的 256 KB。
     public static let defaultChunkBytes = 262_144
 
     /// 进度节流间隔，落在 ADR-0001 §4.4 要求的 100–200 ms 区间中间。
     public static let defaultProgressInterval: Duration = .milliseconds(150)
 
-    /// 单调时钟（纳秒）。做成参数是为了让"节流生效"这条断言能在不睡真时间的单测里跑。
+    /// 单调时钟（纳秒）。
     public struct Clock: Sendable {
         public let nanoseconds: @Sendable () -> UInt64
 
@@ -46,30 +66,73 @@ public enum TransferEngine {
 
     // MARK: - 下载：远端 → 本地
 
-    /// 下载一个远端文件到本地路径，返回落盘的字节数。
-    ///
-    /// 抛出的错误分三类且**不合并**：`RemoteError`（远端或协议）、`.localIO`（本地盘）、
-    /// `CancellationError`（被取消）。同步引擎对这三类的处置完全不同——重试、提示用户、
-    /// 还是直接放弃——在这里合成一个错误就把这个区分丢掉了。
+    /// 下载一个远端文件到本地路径，返回传输执行结果。
     @discardableResult
-    public static func download(_ remote: RemotePath,
-                                to local: URL,
-                                using transfer: any RemoteTransfer,
-                                chunkBytes: Int = defaultChunkBytes,
-                                progressInterval: Duration = defaultProgressInterval,
-                                clock: Clock = .uptime,
-                                onUpdate: @escaping @Sendable (TransferProgress) -> Void = { _ in }
-    ) async throws -> Int64 {
-        let reader = try await transfer.openRead(remote)
+    public static func download(
+        _ remote: RemotePath,
+        to local: URL,
+        using transfer: any RemoteTransfer,
+        chunkBytes: Int = defaultChunkBytes,
+        progressInterval: Duration = defaultProgressInterval,
+        clock: Clock = .uptime,
+        rateLimiter: RateLimiter? = nil,
+        usePartFile: Bool = true,
+        allowResume: Bool = true,
+        initialSnapshot: ResumeSnapshot? = nil,
+        onUpdate: @escaping @Sendable (TransferProgress) -> Void = { _ in }
+    ) async throws -> TransferExecutionResult {
+        let targetPartURL = usePartFile ? partFileURL(for: local) : local
+        var startOffset: Int64 = 0
+        var resumeConfidence: ResumeConfidence = .high
+
+        // 检查断点续传条件与本地已有 .part 文件
+        if usePartFile && allowResume && FileManager.default.fileExists(atPath: targetPartURL.path) {
+            let existingSize = (try? FileManager.default.attributesOfItem(atPath: targetPartURL.path)[.size] as? Int64) ?? 0
+            if existingSize > 0 {
+                startOffset = existingSize
+            }
+        }
+
+        // 打开远端读句柄
+        let reader = try await transfer.openRead(remote, offset: startOffset)
         let totalSize = await reader.totalSize
-        // 本地文件先建成 0 字节再开工：目录不可写、盘满这些应当在发出第一个 chunk
-        // 之前失败，而不是传到一半留下半份文件。
+
+        // 续传置信度双采样校验（起点采样与复查）
+        if startOffset > 0 {
+            if let total = totalSize {
+                if total < startOffset {
+                    // 远端文件比本地已下部分还要小，说明远端已被修改或重置，续传无效，从头下载
+                    resumeConfidence = .invalid(reason: "远端文件大小小于本地 .part 偏移")
+                    startOffset = 0
+                } else if total == startOffset {
+                    // 本地已完全下载完毕，直接落定
+                    await reader.close()
+                    if usePartFile {
+                        try replaceOrMove(from: targetPartURL, to: local)
+                    }
+                    onUpdate(TransferProgress(bytesDone: total, totalBytes: total, chunks: 0, isFinal: true))
+                    return TransferExecutionResult(
+                        bytesTransferred: 0,
+                        totalBytes: total,
+                        confidence: .high,
+                        finalSnapshot: ResumeSnapshot(size: total, modificationDate: nil, mtimeIsReliable: true)
+                    )
+                }
+            }
+
+            if let initial = initialSnapshot, let total = totalSize {
+                if initial.size != total {
+                    resumeConfidence = .invalid(reason: "远端文件在断点期间大小发生改变")
+                    startOffset = 0
+                }
+            }
+        }
+
+        // 打开本地写入句柄
         let handle: FileHandle
         do {
-            handle = try openForWriting(local)
+            handle = try openForWriting(targetPartURL, append: startOffset > 0)
         } catch {
-            // 本地开不出来也必须摘远端句柄：否则每撞一次"目录不可写"就漏一个
-            // 服务器侧 READ 句柄（它要挂到连接关闭才回收）。
             await reader.close()
             throw error
         }
@@ -77,146 +140,294 @@ public enum TransferEngine {
         let written: Int64
         do {
             written = try await withTaskCancellationHandler(operation: {
-                try await pumpDownload(reader: reader, into: handle, totalSize: totalSize,
-                                       chunkBytes: chunkBytes, progressInterval: progressInterval,
-                                       clock: clock, onUpdate: onUpdate)
+                try await pumpDownload(
+                    reader: reader,
+                    into: handle,
+                    startOffset: startOffset,
+                    totalSize: totalSize,
+                    chunkBytes: chunkBytes,
+                    progressInterval: progressInterval,
+                    clock: clock,
+                    rateLimiter: rateLimiter,
+                    onUpdate: onUpdate
+                )
             }, onCancel: {
-                // 只置标志就返回：真正退出由句柄内部的 poll 循环在下一个切片边界观察到（K1）。
                 reader.cancel()
             })
             try handle.close()
-            // EOF 之后必须关远端句柄：不关的话服务器侧那个 READ 句柄会一直挂到连接
-            // 关闭，下载 N 个文件就漏 N 个（上传路径有 commit/abort 收尾，下载不能没有）。
             await reader.close()
-        } catch {
-            // 取消路径上 `close()` 只是本地 fclose，与协议无关，照样把文件描述符还掉。
+
+            // 下载成功收尾：原子替换到最终目标
+            if usePartFile {
+                try replaceOrMove(from: targetPartURL, to: local)
+            }
+        } catch is CancellationError {
             try? handle.close()
-            // 失败路径也要摘句柄：`releaseFile` 内部会跳过取消时的 CLOSE（D4），
-            // 只是把连接表里的 id 拿掉——`hardTeardown` 之后那些指针已不是合法内存。
+            await reader.close()
+            throw CancellationError()
+        } catch {
+            try? handle.close()
             await reader.close()
             throw error
         }
-        return written
+
+        let finalTotal = startOffset + written
+        let finalSnapshot = ResumeSnapshot(size: finalTotal, modificationDate: nil, mtimeIsReliable: true)
+        return TransferExecutionResult(
+            bytesTransferred: written,
+            totalBytes: totalSize ?? finalTotal,
+            confidence: resumeConfidence,
+            finalSnapshot: finalSnapshot
+        )
     }
 
-    private static func pumpDownload(reader: any RemoteReader,
-                                     into handle: FileHandle,
-                                     totalSize: Int64?,
-                                     chunkBytes: Int,
-                                     progressInterval: Duration,
-                                     clock: Clock,
-                                     onUpdate: @escaping @Sendable (TransferProgress) -> Void) async throws
-        -> Int64
-    {
+    private static func pumpDownload(
+        reader: any RemoteReader,
+        into handle: FileHandle,
+        startOffset: Int64,
+        totalSize: Int64?,
+        chunkBytes: Int,
+        progressInterval: Duration,
+        clock: Clock,
+        rateLimiter: RateLimiter?,
+        onUpdate: @escaping @Sendable (TransferProgress) -> Void
+    ) async throws -> Int64 {
         var reporter = ProgressReporter(totalBytes: totalSize, interval: progressInterval,
                                         clock: clock, onUpdate: onUpdate)
         var written: Int64 = 0
         var chunks = 0
 
         while true {
+            try Task.checkCancellation()
+
             let data = try await reader.read(maxBytes: chunkBytes)
-            if data.isEmpty { break }                       // EOF
+            if data.isEmpty { break } // EOF
+
+            // 限速器控速
+            if let limiter = rateLimiter {
+                try await limiter.consume(bytes: data.count)
+            }
+
             try writeLocally(data, to: handle)
             written += Int64(data.count)
             chunks += 1
-            reporter.report(bytesDone: written, chunks: chunks)
+            reporter.report(bytesDone: startOffset + written, chunks: chunks)
         }
-        reporter.finish(bytesDone: written, chunks: chunks)
+        reporter.finish(bytesDone: startOffset + written, chunks: chunks)
         return written
     }
 
     // MARK: - 上传：本地 → 远端
 
-    /// 上传一个本地文件到远端路径，返回远端确认写入的字节数。
-    ///
-    /// 目标已存在时**整体覆盖**：`createWrite(offset: 0)` 带截断。不截断会在
-    /// "新文件比旧的短"时留下上一次的尾巴——那是静默损坏，比覆盖更坏。
-    /// 冲突询问与 `.part` 临时文件是 M3/M4 的事，但这个默认行为要先记进基线
-    /// （docs/spike/M1-06 §6），否则 UI 一上线就会静默删数据。
+    /// 上传一个本地文件到远端路径，返回传输执行结果。
     @discardableResult
-    public static func upload(from local: URL,
-                              to remote: RemotePath,
-                              using transfer: any RemoteTransfer,
-                              chunkBytes: Int = defaultChunkBytes,
-                              progressInterval: Duration = defaultProgressInterval,
-                              clock: Clock = .uptime,
-                              onUpdate: @escaping @Sendable (TransferProgress) -> Void = { _ in }
-    ) async throws -> Int64 {
+    public static func upload(
+        from local: URL,
+        to remote: RemotePath,
+        using transfer: any RemoteTransfer,
+        fileSystem: (any RemoteFileSystem)? = nil,
+        chunkBytes: Int = defaultChunkBytes,
+        progressInterval: Duration = defaultProgressInterval,
+        clock: Clock = .uptime,
+        rateLimiter: RateLimiter? = nil,
+        usePartFile: Bool = false,
+        allowResume: Bool = false,
+        initialSnapshot: ResumeSnapshot? = nil,
+        onUpdate: @escaping @Sendable (TransferProgress) -> Void = { _ in }
+    ) async throws -> TransferExecutionResult {
         let source = try openForReading(local)
-        let writer: any RemoteWriter
+        let totalBytes: Int64
         do {
-            writer = try await transfer.createWrite(remote, offset: 0)
+            totalBytes = try sizeOfSource(source, at: local)
         } catch {
-            // 远端开不出来也必须还本地描述符：与 download 侧 `openForWriting` 失败
-            // 要关 reader 是同一条纪律（上传先开本地、下载先开远端，各自兜住对面）。
             try? source.close()
             throw error
         }
-        let totalBytes = try sizeOfSource(source, at: local)
+
+        // 续传置信度判断：若 initialSnapshot 存在且 mtime 不可靠，禁用上传续传
+        var startOffset: Int64 = 0
+        var resumeConfidence: ResumeConfidence = .high
+        if allowResume, let initial = initialSnapshot {
+            if !initial.mtimeIsReliable {
+                resumeConfidence = .low(reason: "远端服务器 mtime 不可靠，已禁用上传续传")
+                startOffset = 0
+            } else {
+                startOffset = initial.size
+            }
+        }
+
+        // 目标远端路径：若使用临时名且具备 fileSystem 替换能力，则写临时名
+        let targetRemote: RemotePath
+        let partRemoteSuffix: String?
+        if usePartFile && fileSystem != nil {
+            let suffix = "part-\(UUID().uuidString.prefix(8))"
+            partRemoteSuffix = suffix
+            let fileName = remote.lastComponent?.displayString() ?? "file"
+            targetRemote = try remote.parent().appending(component: "\(fileName).\(suffix)")
+        } else {
+            targetRemote = remote
+            partRemoteSuffix = nil
+        }
+
+        if startOffset > 0 {
+            try? source.seek(toOffset: UInt64(startOffset))
+        }
+
+        let writer: any RemoteWriter
+        do {
+            writer = try await transfer.createWrite(targetRemote, offset: startOffset)
+        } catch {
+            if let fs = fileSystem {
+                let parent = targetRemote.parent()
+                do {
+                    try await ensureRemoteDirectory(parent, fileSystem: fs)
+                    writer = try await transfer.createWrite(targetRemote, offset: startOffset)
+                } catch {
+                    try? source.close()
+                    throw error
+                }
+            } else {
+                try? source.close()
+                throw error
+            }
+        }
 
         let sent: Int64
         do {
             sent = try await withTaskCancellationHandler(operation: {
-                try await pumpUpload(writer: writer, from: source, totalBytes: totalBytes,
-                                     chunkBytes: chunkBytes, progressInterval: progressInterval,
-                                     clock: clock, onUpdate: onUpdate)
+                try await pumpUpload(
+                    writer: writer,
+                    from: source,
+                    startOffset: startOffset,
+                    totalBytes: totalBytes,
+                    chunkBytes: chunkBytes,
+                    progressInterval: progressInterval,
+                    clock: clock,
+                    rateLimiter: rateLimiter,
+                    onUpdate: onUpdate
+                )
             }, onCancel: {
                 writer.cancel()
             })
             try source.close()
-        } catch {
-            // 远端句柄的回滚交给 writer 自己：它知道该不该发 CLOSE（取消路径不许体面关闭，D4）。
+            try await writer.commit()
+
+            // 若写的是临时文件，校验后原子覆盖 rename 到最终目标路径
+            if let _ = partRemoteSuffix, let fs = fileSystem {
+                try await fs.rename(targetRemote, to: remote, overwrite: true)
+            }
+        } catch is CancellationError {
             await writer.abort()
             try? source.close()
+            if let _ = partRemoteSuffix, let fs = fileSystem {
+                try? await fs.remove(targetRemote, recursive: false)
+            }
+            throw CancellationError()
+        } catch {
+            await writer.abort()
+            try? source.close()
+            if let _ = partRemoteSuffix, let fs = fileSystem {
+                try? await fs.remove(targetRemote, recursive: false)
+            }
             throw error
         }
-        return sent
+
+        let finalTotal = startOffset + sent
+        let finalSnapshot = ResumeSnapshot(size: finalTotal, modificationDate: Date(), mtimeIsReliable: true)
+        return TransferExecutionResult(
+            bytesTransferred: sent,
+            totalBytes: totalBytes,
+            confidence: resumeConfidence,
+            finalSnapshot: finalSnapshot
+        )
     }
 
-    private static func pumpUpload(writer: any RemoteWriter,
-                                   from source: FileHandle,
-                                   totalBytes: Int64,
-                                   chunkBytes: Int,
-                                   progressInterval: Duration,
-                                   clock: Clock,
-                                   onUpdate: @escaping @Sendable (TransferProgress) -> Void) async throws
-        -> Int64
-    {
+    private static func pumpUpload(
+        writer: any RemoteWriter,
+        from source: FileHandle,
+        startOffset: Int64,
+        totalBytes: Int64,
+        chunkBytes: Int,
+        progressInterval: Duration,
+        clock: Clock,
+        rateLimiter: RateLimiter?,
+        onUpdate: @escaping @Sendable (TransferProgress) -> Void
+    ) async throws -> Int64 {
         var reporter = ProgressReporter(totalBytes: totalBytes, interval: progressInterval,
                                         clock: clock, onUpdate: onUpdate)
         var sent: Int64 = 0
         var chunks = 0
 
         while true {
+            try Task.checkCancellation()
+
             let data = try readLocally(source, count: chunkBytes)
             if data.isEmpty { break }
+
+            if let limiter = rateLimiter {
+                try await limiter.consume(bytes: data.count)
+            }
+
             let accepted = try await writer.write(data)
-            // 含糊不得：`write` 说收了 N 字节却只回更少，差额就是永久丢掉的一段数据，
-            // 而且下一次 `write` 会从错的位置续上去。
             guard accepted == data.count else {
-                throw RemoteError.protocolViolation(
-                    "写入只被确认 \(accepted)/\(data.count) 字节")
+                throw RemoteError.protocolViolation("写入只被确认 \(accepted)/\(data.count) 字节")
             }
             sent += Int64(accepted)
             chunks += 1
-            reporter.report(bytesDone: sent, chunks: chunks)
+            reporter.report(bytesDone: startOffset + sent, chunks: chunks)
         }
-        try await writer.commit()
-        reporter.finish(bytesDone: sent, chunks: chunks)
+        reporter.finish(bytesDone: startOffset + sent, chunks: chunks)
         return sent
     }
 
     // MARK: - 本地图层
 
-    /// 本地读写失败的分界：能分出"盘满"就分出 `diskFull`，其余按方向给
-    /// `writeFailed`/`readFailed`。不许把本地故障报成网络错误——那会让同步引擎去重试
-    /// 一个重试一万次也不会成功的操作（`RemoteError.isRetryable` 只认 `.network`）。
-    private static func openForWriting(_ local: URL) throws -> FileHandle {
-        do {
-            if !FileManager.default.createFile(atPath: local.path, contents: nil) {
-                throw posixError()
+    /// 计算本地目标对应的 .part 临时文件路径。
+    ///
+    /// APFS/HFS+ 与大多数 POSIX 文件系统的 NAME_MAX 严格等于 255 字节。
+    /// 若原始文件名已达 255 字节，直接追加 `.part` 会触发 ENAMETOOLONG 失败，
+    /// 因此在文件名超长时必须安全裁剪基础名，确保整个文件名长度不超过 255 字节。
+    public static func partFileURL(for target: URL) -> URL {
+        let fileName = target.lastPathComponent
+        let dir = target.deletingLastPathComponent()
+        let partSuffix = ".part"
+        if fileName.utf8.count + partSuffix.utf8.count <= 255 {
+            return dir.appendingPathComponent("\(fileName)\(partSuffix)")
+        } else {
+            let maxBaseBytes = 255 - partSuffix.utf8.count
+            var truncated = fileName
+            while truncated.utf8.count > maxBaseBytes {
+                truncated.removeLast()
             }
-            return try FileHandle(forWritingTo: local)
+            return dir.appendingPathComponent("\(truncated)\(partSuffix)")
+        }
+    }
+
+    public static func replaceOrMove(from: URL, to: URL) throws {
+        let fm = FileManager.default
+        if fm.fileExists(atPath: to.path) {
+            _ = try fm.replaceItemAt(to, withItemAt: from)
+        } else {
+            try fm.moveItem(at: from, to: to)
+        }
+    }
+
+    private static func openForWriting(_ local: URL, append: Bool = false) throws -> FileHandle {
+        do {
+            let parentDir = local.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: parentDir, withIntermediateDirectories: true)
+            if !FileManager.default.fileExists(atPath: local.path) {
+                if !FileManager.default.createFile(atPath: local.path, contents: nil) {
+                    throw posixError()
+                }
+            }
+            let handle = try FileHandle(forWritingTo: local)
+            if append {
+                try handle.seekToEnd()
+            } else {
+                try handle.truncate(atOffset: 0)
+            }
+            return handle
         } catch let error as RemoteError {
             throw error
         } catch {
@@ -267,18 +478,39 @@ public enum TransferEngine {
         return fallback
     }
 
-    /// `createFile` 失败时不给 error，只能自己造一个 POSIX 码进去。
+    private static func ensureRemoteDirectory(_ path: RemotePath, fileSystem: any RemoteFileSystem) async throws {
+        if path.wireBytes == [0x2F] { return }
+        if (try? await fileSystem.stat(path)) != nil { return }
+        let parent = path.parent()
+        if parent != path {
+            try await ensureRemoteDirectory(parent, fileSystem: fileSystem)
+        }
+        try await fileSystem.mkdir(path, permissions: 0o755)
+    }
+
     private static func posixError() -> NSError {
         NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
     }
 }
 
-/// 进度节流：两次汇报之间至少隔 `interval`，收尾那一次必发。
-///
-/// 不做这层的话，256 KB chunk 在本机是每几毫秒一跳，UI 会被淹掉（ADR-0001 §4.4）。
-/// 被压掉的那几次不用补报：每个进度带的都是**累计**字节数，最新那一个自然包含前面的。
-/// 起点取"现在减去间隔"，所以第一个 chunk 就能报出去——用户看到的不是"开始不动"，
-/// 而是"开始了"。
+private extension RemotePath {
+    func parent() -> RemotePath {
+        if wireBytes == [0x2F] { return self }
+        var bytes = wireBytes
+        while bytes.count > 1 && bytes.last == 0x2F {
+            bytes.removeLast()
+        }
+        if let lastSlash = bytes.lastIndex(of: 0x2F) {
+            if lastSlash == 0 {
+                return RemotePath(wireBytes: [0x2F], isAbsolute: true)
+            }
+            return RemotePath(wireBytes: Array(bytes[..<lastSlash]), isAbsolute: isAbsolute)
+        }
+        return RemotePath(wireBytes: [0x2F], isAbsolute: true)
+    }
+}
+
+/// 进度节流。
 struct ProgressReporter {
     private let totalBytes: Int64?
     private let intervalNanoseconds: UInt64
@@ -306,7 +538,6 @@ struct ProgressReporter {
     }
 
     mutating func finish(bytesDone: Int64, chunks: Int) {
-        // 收尾不看间隔：最后那 100–200 ms 的进度要是也被压掉，UI 会永远停在"差一点"上。
         onUpdate(TransferProgress(bytesDone: bytesDone, totalBytes: totalBytes,
                                   chunks: chunks, isFinal: true))
     }

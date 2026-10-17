@@ -77,7 +77,51 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
     public var pendingKeyboardRequest: KeyboardInteractiveRequest?
     private var keyboardContinuation: CheckedContinuation<[String]?, Never>?
 
-    public init() {}
+    // MARK: - M3: 传输队列调度器（TransferQueue）
+    public let transferQueue: TransferQueue
+    public var queueTasks: [TransferTaskState] = []
+    public var queueSummary: (running: Int, failed: Int, pending: Int) = (0, 0, 0)
+    public var aggregateSpeed: (upload: Double, download: Double) = (0, 0)
+    public var isQueuePanelPresented: Bool = false
+
+    public static var ferryTransferQueueURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let ferryDir = appSupport.appendingPathComponent("Ferry", isDirectory: true)
+        try? FileManager.default.createDirectory(at: ferryDir, withIntermediateDirectories: true)
+        return ferryDir.appendingPathComponent("transfer_queue.json")
+    }
+
+    public init() {
+        let q = TransferQueue(persistenceURL: Self.ferryTransferQueueURL)
+        self.transferQueue = q
+        Task { [weak self] in
+            await q.initializeAndRecover()
+            await q.addStateListener { [weak self] states in
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    self.queueTasks = states
+                    var r = 0, f = 0, p = 0
+                    var up = 0.0, down = 0.0
+                    for s in states {
+                        switch s.status {
+                        case .running:
+                            r += 1
+                            if s.direction == .upload { up += s.speedBytesPerSec }
+                            else { down += s.speedBytesPerSec }
+                        case .failed:
+                            f += 1
+                        case .pending:
+                            p += 1
+                        default:
+                            break
+                        }
+                    }
+                    self.queueSummary = (r, f, p)
+                    self.aggregateSpeed = (up, down)
+                }
+            }
+        }
+    }
 
     // MARK: - 主机密钥存储路径
     public static var ferryKnownHostsURL: URL {
@@ -260,6 +304,7 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
             let rtt = measure.elapsedMs
 
             try await loadRemoteItems(from: targetPath, on: connection)
+            await transferQueue.setBackend(transfer: connection, fileSystem: connection)
 
             state = .connected(
                 siteName: bookmark.name.isEmpty ? bookmark.host : bookmark.name,
@@ -268,6 +313,7 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
             )
         } catch is CancellationError {
             state = .disconnected
+            await transferQueue.setBackend(transfer: nil, fileSystem: nil)
             await connection.close()
             self.activeConnection = nil
             endAppNapActivity()
@@ -280,11 +326,13 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
                 )
             }
             state = .failed(message: Self.readableMessage(for: remoteError))
+            await transferQueue.setBackend(transfer: nil, fileSystem: nil)
             await connection.close()
             self.activeConnection = nil
             endAppNapActivity()
         } catch {
             state = .failed(message: error.localizedDescription)
+            await transferQueue.setBackend(transfer: nil, fileSystem: nil)
             await connection.close()
             self.activeConnection = nil
             endAppNapActivity()
@@ -397,155 +445,93 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
         }
     }
 
-    // MARK: - 单文件上下传（接入 TransferEngine）
+    // MARK: - M3: 传输队列与任务派发
 
     public func uploadFiles(_ localURLs: [URL], onComplete: (@MainActor () -> Void)? = nil) {
-        guard let connection = activeConnection, let remoteDir = currentRemotePath else { return }
-        let filesOnly = localURLs.filter { url in
-            var isDir: ObjCBool = false
-            return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && !isDir.boolValue
-        }
-        guard !filesOnly.isEmpty else { return }
+        guard let remoteDir = currentRemotePath else { return }
+        guard !localURLs.isEmpty else { return }
+        isQueuePanelPresented = true
 
-        transferTask?.cancel()
-        transferTask = Task { [self] in
-            for fileURL in filesOnly {
-                if Task.isCancelled { break }
-                let fileName = fileURL.lastPathComponent
-                guard let remoteTarget = try? PathResolver.child(of: remoteDir, name: Array(fileName.utf8)) else {
-                    continue
-                }
-                let startTime = Date()
-                self.activeTransfer = ActiveTransferInfo(
-                    direction: .upload,
-                    fileName: fileName,
-                    bytesDone: 0,
-                    totalBytes: nil,
-                    speedBytesPerSec: 0,
-                    isCompleted: false,
-                    errorMessage: nil
-                )
-
-                do {
-                    _ = try await TransferEngine.upload(
-                        from: fileURL,
-                        to: remoteTarget,
-                        using: connection,
-                        onUpdate: { [weak self = self] progress in
-                            let elapsed = max(Date().timeIntervalSince(startTime), 0.001)
-                            let speed = Double(progress.bytesDone) / elapsed
-                            Task { @MainActor [weak self = self] in
-                                self?.activeTransfer = ActiveTransferInfo(
-                                    direction: .upload,
-                                    fileName: fileName,
-                                    bytesDone: progress.bytesDone,
-                                    totalBytes: progress.totalBytes,
-                                    speedBytesPerSec: speed,
-                                    isCompleted: progress.isFinal,
-                                    errorMessage: nil
-                                )
-                            }
-                        }
-                    )
-                } catch is CancellationError {
-                    await handleCancelledTransferSession()
-                    return
-                } catch {
-                    self.activeTransfer = ActiveTransferInfo(
-                        direction: .upload,
-                        fileName: fileName,
-                        bytesDone: activeTransfer?.bytesDone ?? 0,
-                        totalBytes: activeTransfer?.totalBytes,
-                        speedBytesPerSec: 0,
-                        isCompleted: false,
-                        errorMessage: error.localizedDescription
-                    )
-                    return
+        Task {
+            var scannedFiles: [DirectoryScanner.ScannedFile] = []
+            for url in localURLs {
+                var isDir: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { continue }
+                if isDir.boolValue {
+                    if let scanned = try? DirectoryScanner.scanLocalDirectory(url, targetRemoteDir: remoteDir) {
+                        scannedFiles.append(contentsOf: scanned)
+                    }
+                } else {
+                    let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+                    let size = attrs?[.size] as? Int64
+                    let targetName = url.lastPathComponent
+                    if let targetRemote = try? PathResolver.child(of: remoteDir, name: Array(targetName.utf8)) {
+                        scannedFiles.append(DirectoryScanner.ScannedFile(localURL: url, remotePath: targetRemote, size: size))
+                    }
                 }
             }
-            await refreshRemote()
+            if !scannedFiles.isEmpty {
+                await transferQueue.addScannedBatch(scannedFiles, direction: .upload)
+            }
             onComplete?()
         }
     }
 
     public func downloadItems(_ items: [RemoteDisplayItem], to localDirectory: URL, onComplete: (@MainActor () -> Void)? = nil) {
         guard let connection = activeConnection else { return }
-        let filesOnly = items.filter { !$0.isDirectory }
-        guard !filesOnly.isEmpty else { return }
+        guard !items.isEmpty else { return }
+        isQueuePanelPresented = true
 
-        transferTask?.cancel()
-        transferTask = Task { [self] in
-            for item in filesOnly {
-                if Task.isCancelled { break }
-                let destination = localDirectory.appendingPathComponent(item.name)
-                let startTime = Date()
-                self.activeTransfer = ActiveTransferInfo(
-                    direction: .download,
-                    fileName: item.name,
-                    bytesDone: 0,
-                    totalBytes: item.size,
-                    speedBytesPerSec: 0,
-                    isCompleted: false,
-                    errorMessage: nil
-                )
-
-                do {
-                    _ = try await TransferEngine.download(
-                        item.path,
-                        to: destination,
-                        using: connection,
-                        onUpdate: { [weak self = self] progress in
-                            let elapsed = max(Date().timeIntervalSince(startTime), 0.001)
-                            let speed = Double(progress.bytesDone) / elapsed
-                            Task { @MainActor [weak self = self] in
-                                self?.activeTransfer = ActiveTransferInfo(
-                                    direction: .download,
-                                    fileName: item.name,
-                                    bytesDone: progress.bytesDone,
-                                    totalBytes: progress.totalBytes ?? item.size,
-                                    speedBytesPerSec: speed,
-                                    isCompleted: progress.isFinal,
-                                    errorMessage: nil
-                                )
-                            }
-                        }
-                    )
-                } catch is CancellationError {
-                    try? FileManager.default.removeItem(at: destination)
-                    await handleCancelledTransferSession()
-                    return
-                } catch {
-                    self.activeTransfer = ActiveTransferInfo(
-                        direction: .download,
-                        fileName: item.name,
-                        bytesDone: activeTransfer?.bytesDone ?? 0,
-                        totalBytes: item.size,
-                        speedBytesPerSec: 0,
-                        isCompleted: false,
-                        errorMessage: error.localizedDescription
-                    )
-                    return
+        Task {
+            var scannedFiles: [DirectoryScanner.ScannedFile] = []
+            for item in items {
+                if item.isDirectory {
+                    let destFolder = localDirectory.appendingPathComponent(item.name)
+                    if let scanned = try? await DirectoryScanner.scanRemoteDirectory(item.path, fileSystem: connection, targetLocalDir: destFolder) {
+                        scannedFiles.append(contentsOf: scanned)
+                    }
+                } else {
+                    let destination = localDirectory.appendingPathComponent(item.name)
+                    scannedFiles.append(DirectoryScanner.ScannedFile(localURL: destination, remotePath: item.path, size: item.size))
                 }
+            }
+            if !scannedFiles.isEmpty {
+                await transferQueue.addScannedBatch(scannedFiles, direction: .download)
             }
             onComplete?()
         }
     }
 
-    public func cancelActiveTransfer() {
-        transferTask?.cancel()
-        transferTask = nil
+    public func pauseQueueTask(id: UUID) {
+        Task { await transferQueue.pauseTask(id: id) }
     }
 
-    /// 取消传输后 session 已按 M2-D3 硬拆为 `.aborted`，自动重连并恢复当前远端目录。
-    private func handleCancelledTransferSession() async {
-        activeTransfer = nil
-        guard let bookmark = currentBookmark else { return }
-        let previousPath = currentRemotePath
-        var reconnectBookmark = bookmark
-        if let previousPath {
-            reconnectBookmark.remotePath = previousPath.displayString()
-        }
-        await connect(to: reconnectBookmark)
+    public func resumeQueueTask(id: UUID) {
+        Task { await transferQueue.resumeTask(id: id) }
+    }
+
+    public func cancelQueueTask(id: UUID) {
+        Task { await transferQueue.cancelTask(id: id) }
+    }
+
+    public func retryQueueTask(id: UUID) {
+        Task { await transferQueue.retryTask(id: id) }
+    }
+
+    public func pauseAllQueueTasks() {
+        Task { await transferQueue.pauseAll() }
+    }
+
+    public func resumeAllQueueTasks() {
+        Task { await transferQueue.resumeAll() }
+    }
+
+    public func clearCompletedQueueTasks() {
+        Task { await transferQueue.clearCompleted() }
+    }
+
+    public func cancelActiveTransfer() {
+        Task { await transferQueue.pauseAll() }
     }
 
     // MARK: - 断开连接
@@ -553,6 +539,7 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
         transferTask?.cancel()
         transferTask = nil
         activeTransfer = nil
+        await transferQueue.setBackend(transfer: nil, fileSystem: nil)
         if let connection = activeConnection {
             await connection.close()
             self.activeConnection = nil

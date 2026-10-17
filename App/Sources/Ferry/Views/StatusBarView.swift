@@ -14,6 +14,18 @@ public struct StatusBarView: View {
         ThemeManager.shared.theme(for: colorScheme)
     }
 
+    private var formattedUploadSpeed: String {
+        let speed = connectionService.aggregateSpeed.upload
+        guard speed > 0 else { return "0 KB/s" }
+        return ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file) + "/s"
+    }
+
+    private var formattedDownloadSpeed: String {
+        let speed = connectionService.aggregateSpeed.download
+        guard speed > 0 else { return "0 KB/s" }
+        return ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file) + "/s"
+    }
+
     public var body: some View {
         HStack(spacing: 12) {
             // 左：本地选择状态
@@ -29,47 +41,37 @@ public struct StatusBarView: View {
 
             Spacer()
 
-            // 中：实时传输状态或网络速率指示
-            if let active = connectionService.activeTransfer {
+            // 中：实时聚合传输速率指示与队列入口（UI-REFERENCE.md §2.4: `↑ 8.4 MB/s  ↓ 0 KB/s`，U7）
+            Button(action: {
+                connectionService.isQueuePanelPresented.toggle()
+            }) {
                 HStack(spacing: 8) {
-                    ProgressView(value: active.progressFraction)
-                        .progressViewStyle(.linear)
-                        .frame(width: 90)
-                        .tint(theme.accentColor)
-                    if let err = active.errorMessage {
-                        Text("\(active.direction.rawValue)失败：\(err)")
+                    HStack(spacing: 6) {
+                        Text("↑ \(formattedUploadSpeed)")
+                            .foregroundColor(connectionService.aggregateSpeed.upload > 0 ? theme.accentColor : theme.text3)
+                        Text("↓ \(formattedDownloadSpeed)")
+                            .foregroundColor(connectionService.aggregateSpeed.download > 0 ? theme.accentColor : theme.text3)
+                    }
+                    .font(FerryFont.monoCaption)
+
+                    let summary = connectionService.queueSummary
+                    if summary.running > 0 {
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.mini)
+                            Text("\(summary.running) 项进行中")
+                                .font(FerryFont.caption)
+                                .foregroundColor(theme.text2)
+                        }
+                    } else if summary.failed > 0 {
+                        Text("\(summary.failed) 项失败")
                             .font(FerryFont.caption)
                             .foregroundColor(theme.errorRed)
-                            .lineLimit(1)
-                    } else {
-                        Text("\(active.direction == .upload ? "↑" : "↓") \(active.fileName) · \(active.formattedSpeed)")
-                            .font(FerryFont.monoCaption)
-                            .foregroundColor(theme.text)
-                            .lineLimit(1)
                     }
-                    Button(action: {
-                        connectionService.cancelActiveTransfer()
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(theme.text2)
-                    }
-                    .buttonStyle(.plain)
-                    .help("取消当前传输（将按 M1-06 §9.1 硬拆传输连接并刷新）")
                 }
-            } else if let msg = connectionService.navigationErrorMessage {
-                Text(msg)
-                    .font(FerryFont.caption)
-                    .foregroundColor(theme.errorRed)
-                    .lineLimit(1)
-            } else {
-                HStack(spacing: 8) {
-                    Text("↑ 0 KB/s")
-                    Text("↓ 0 KB/s")
-                }
-                .font(FerryFont.monoCaption)
-                .foregroundColor(theme.text3)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help("点击展开/收起传输队列")
 
             Spacer()
 

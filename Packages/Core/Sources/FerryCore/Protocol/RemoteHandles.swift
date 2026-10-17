@@ -12,12 +12,21 @@ public protocol RemoteTransfer: Sendable {
     /// 同步引擎靠这个区分"远端已删"与"网络故障"。
     func openRead(_ path: RemotePath) async throws -> any RemoteReader
 
+    /// 从指定字节偏移处打开只读句柄，用于断点续传（M3）。
+    func openRead(_ path: RemotePath, offset: Int64) async throws -> any RemoteReader
+
     /// 打开一个写句柄。
     ///
     /// `offset == 0` 意味着"从零重写"，实现必须**截断**已有内容：不截断的话
     /// "新文件比旧的短"会在尾巴上留下上一次的字节，那是静默损坏，比覆盖更坏。
     /// `offset > 0` 从给定偏移续写，不截断。
     func createWrite(_ path: RemotePath, offset: Int64) async throws -> any RemoteWriter
+}
+
+public extension RemoteTransfer {
+    func openRead(_ path: RemotePath) async throws -> any RemoteReader {
+        try await openRead(path, offset: 0)
+    }
 }
 
 /// 句柄必须是引用语义，杜绝"后台正在读、外部并发 cancel"触发 Swift 独占访问违规。

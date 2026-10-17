@@ -35,6 +35,12 @@ public struct FerryApp: App {
                 }
                 .keyboardShortcut(".", modifiers: [.command, .shift])
             }
+            CommandMenu("视图") {
+                Button("切换传输队列面板") {
+                    NotificationCenter.default.post(name: .ferryToggleTransferQueue, object: nil)
+                }
+                .keyboardShortcut("j", modifiers: .command)
+            }
         }
     }
 }
@@ -45,4 +51,5 @@ extension Notification.Name {
     public static let ferryToggleHiddenFiles = Notification.Name("ferryToggleHiddenFiles")
     public static let ferryOpenPreferences = Notification.Name("ferryOpenPreferences")
     public static let ferryRefreshLocalPane = Notification.Name("ferryRefreshLocalPane")
+    public static let ferryToggleTransferQueue = Notification.Name("ferryToggleTransferQueue")
 }

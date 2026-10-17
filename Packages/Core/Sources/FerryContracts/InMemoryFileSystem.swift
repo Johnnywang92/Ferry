@@ -499,12 +499,18 @@ public actor InMemoryFileSystem: RemoteFileSystem {
     // MARK: - RemoteTransfer
 
     public func openRead(_ path: RemotePath) async throws -> any RemoteReader {
+        try await openRead(path, offset: 0)
+    }
+
+    public func openRead(_ path: RemotePath, offset: Int64) async throws -> any RemoteReader {
+        guard offset >= 0 else { throw fail(.openRead, path) }
         let (_, node) = try follow(try normalized(path))
         guard case .file(let contents, _, _, _, _) = node else {
             // 目录能开但读不了第一段：POSIX 的 open(O_RDONLY) 对目录是 EISDIR。
             throw node.isDirectory ? fail(.openRead, path) : RemoteError.notFound(path: path)
         }
-        return InMemoryReader(contents: contents, reportedSize: Int64(contents.count))
+        let start = min(Int(offset), contents.count)
+        return InMemoryReader(contents: Data(contents.suffix(from: start)), reportedSize: Int64(contents.count))
     }
 
     public func createWrite(_ path: RemotePath, offset: Int64) async throws -> any RemoteWriter {

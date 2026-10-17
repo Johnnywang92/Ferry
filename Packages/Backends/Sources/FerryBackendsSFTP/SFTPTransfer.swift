@@ -24,10 +24,20 @@ extension SFTPConnection: RemoteTransfer {
     // MARK: - 开句柄
 
     public func openRead(_ path: RemotePath) async throws -> any RemoteReader {
+        try await openRead(path, offset: 0)
+    }
+
+    public func openRead(_ path: RemotePath, offset: Int64) async throws -> any RemoteReader {
+        guard offset >= 0 else {
+            throw RemoteError.protocolViolation("读偏移不能是负数（\(offset)）")
+        }
         let opened = try await filesystemCall { channel -> (UInt64, Int64?) in
             let absolute = try self.resolveForTransfer(path, channel: channel)
             let pointer = try self.openFile(absolute, flags: UInt(LIBSSH2_FXF_READ), mode: 0,
                                             operation: .openRead, channel: channel)
+            if offset > 0 {
+                libssh2_sftp_seek64(pointer, UInt64(offset))
+            }
             return (try self.registerFile(pointer, path: absolute, writable: false),
                     try self.fstatSize(pointer, path: absolute, channel: channel))
         }

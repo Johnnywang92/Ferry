@@ -141,10 +141,29 @@ extension SFTPConnection {
             let absolute = try resolver.lexicalResolve(path, relativeTo: home)
             fileStats.statCalls += 1
             let attrs = try statBytes(absolute, mode: mode, channel: channel)
-            return (absolute, attrs)
+            return (path, attrs)
         }
         fileStats.listingElapsedMs += uptimeMilliseconds() - start
-        return SFTPAttributes.item(path: result.0, attrs: result.1)
+        var item = SFTPAttributes.item(path: result.0, attrs: result.1)
+        if mode == LIBSSH2_SFTP_LSTAT, item.kind == .symbolicLink {
+            if let target = try? await readlink(result.0) {
+                item = RemoteItem(
+                    path: item.path,
+                    kind: item.kind,
+                    size: item.size,
+                    modificationDate: item.modificationDate,
+                    sizeIsExact: item.sizeIsExact,
+                    mtimeIsReliable: item.mtimeIsReliable,
+                    linkTarget: target,
+                    permissions: item.permissions,
+                    uid: item.uid,
+                    gid: item.gid,
+                    owner: item.owner,
+                    group: item.group
+                )
+            }
+        }
+        return item
     }
 
     // MARK: - 公共外壳
@@ -517,6 +536,125 @@ extension SFTPConnection {
             }
         }
     }
+
+    // MARK: - 删除与重命名（M3）
+
+    /// 删除远端文件或目录。如果是目录且 recursive=true，则递归删除其子项。
+    public func remove(_ path: RemotePath, recursive: Bool = false) async throws {
+        let item = try await stat(path)
+        if item.kind == .directory {
+            if recursive {
+                let listing = try await list(path)
+                for child in listing.entries {
+                    try await remove(child.path, recursive: true)
+                }
+            }
+            try await filesystemCall { channel in
+                guard let session = self.session else { throw RemoteError.protocolViolation("session 已经不在了") }
+                let home = try self.loginDirectory(channel: channel)
+                let absolute = try PathResolver(homeDirectory: home).lexicalResolve(path, relativeTo: home)
+                var terminated = absolute.wireBytes
+                terminated.append(0)
+                let length = UInt32(absolute.wireBytes.count)
+                var loop = self.newLoop(session)
+                let rc = try terminated.withUnsafeBytes { raw -> Int32 in
+                    let pointer = raw.bindMemory(to: CChar.self).baseAddress!
+                    return try loop.drive(deadlineMs: self.operationBudget()) {
+                        libssh2_sftp_rmdir_ex(channel, pointer, length)
+                    }
+                }
+                guard rc == 0 else {
+                    throw self.sftpFailure(rc, channel: channel, operation: .remove, path: absolute)
+                }
+            }
+        } else {
+            try await filesystemCall { channel in
+                guard let session = self.session else { throw RemoteError.protocolViolation("session 已经不在了") }
+                let home = try self.loginDirectory(channel: channel)
+                let absolute = try PathResolver(homeDirectory: home).lexicalResolve(path, relativeTo: home)
+                var terminated = absolute.wireBytes
+                terminated.append(0)
+                let length = UInt32(absolute.wireBytes.count)
+                var loop = self.newLoop(session)
+                let rc = try terminated.withUnsafeBytes { raw -> Int32 in
+                    let pointer = raw.bindMemory(to: CChar.self).baseAddress!
+                    return try loop.drive(deadlineMs: self.operationBudget()) {
+                        libssh2_sftp_unlink_ex(channel, pointer, length)
+                    }
+                }
+                guard rc == 0 else {
+                    throw self.sftpFailure(rc, channel: channel, operation: .remove, path: absolute)
+                }
+            }
+        }
+    }
+
+    /// 重命名或移动远端路径。
+    ///
+    /// overwrite=true 时：优先使用 `posix-rename@openssh.com`（libssh2_sftp_posix_rename_ex），
+    /// 该扩展在 OpenSSH 系列 5 台全部支持原子覆盖替换（D9）。
+    public func rename(_ from: RemotePath, to: RemotePath, overwrite: Bool) async throws {
+        try await filesystemCall { channel in
+            guard let session = self.session else { throw RemoteError.protocolViolation("session 已经不在了") }
+            let home = try self.loginDirectory(channel: channel)
+            let resolver = PathResolver(homeDirectory: home)
+            let srcAbs = try resolver.lexicalResolve(from, relativeTo: home)
+            let dstAbs = try resolver.lexicalResolve(to, relativeTo: home)
+
+            var srcTerm = srcAbs.wireBytes
+            srcTerm.append(0)
+            var dstTerm = dstAbs.wireBytes
+            dstTerm.append(0)
+
+            let srcLen = srcAbs.wireBytes.count
+            let dstLen = dstAbs.wireBytes.count
+
+            if overwrite {
+                // 1. 尝试原子 posix_rename
+                var loop = self.newLoop(session)
+                let posixRc = try srcTerm.withUnsafeBytes { srcRaw -> Int32 in
+                    let srcPtr = srcRaw.bindMemory(to: CChar.self).baseAddress!
+                    return try dstTerm.withUnsafeBytes { dstRaw -> Int32 in
+                        let dstPtr = dstRaw.bindMemory(to: CChar.self).baseAddress!
+                        return try loop.drive(deadlineMs: self.operationBudget()) {
+                            libssh2_sftp_posix_rename_ex(channel, srcPtr, srcLen, dstPtr, dstLen)
+                        }
+                    }
+                }
+                if posixRc == 0 { return }
+
+                // 若 posix_rename 失败，回退到 libssh2_sftp_rename_ex
+                var loopNative = self.newLoop(session)
+                let nativeRc = try srcTerm.withUnsafeBytes { srcRaw -> Int32 in
+                    let srcPtr = srcRaw.bindMemory(to: CChar.self).baseAddress!
+                    return try dstTerm.withUnsafeBytes { dstRaw -> Int32 in
+                        let dstPtr = dstRaw.bindMemory(to: CChar.self).baseAddress!
+                        return try loopNative.drive(deadlineMs: self.operationBudget()) {
+                            libssh2_sftp_rename_ex(channel, srcPtr, UInt32(srcLen), dstPtr, UInt32(dstLen),
+                                                   Int(LIBSSH2_SFTP_RENAME_OVERWRITE | LIBSSH2_SFTP_RENAME_ATOMIC))
+                        }
+                    }
+                }
+                guard nativeRc == 0 else {
+                    throw self.sftpFailure(nativeRc, channel: channel, operation: .rename, path: srcAbs)
+                }
+            } else {
+                var loop = self.newLoop(session)
+                let rc = try srcTerm.withUnsafeBytes { srcRaw -> Int32 in
+                    let srcPtr = srcRaw.bindMemory(to: CChar.self).baseAddress!
+                    return try dstTerm.withUnsafeBytes { dstRaw -> Int32 in
+                        let dstPtr = dstRaw.bindMemory(to: CChar.self).baseAddress!
+                        return try loop.drive(deadlineMs: self.operationBudget()) {
+                            libssh2_sftp_rename_ex(channel, srcPtr, UInt32(srcLen), dstPtr, UInt32(dstLen), 0)
+                        }
+                    }
+                }
+                guard rc == 0 else {
+                    throw self.sftpFailure(rc, channel: channel, operation: .rename, path: srcAbs)
+                }
+            }
+        }
+    }
 }
 
 /// `LIBSSH2_SFTP_ATTRIBUTES` → `RemoteItem`。纯函数，所以单独拿出来给单测直接喂构造的属性。
@@ -588,3 +726,19 @@ enum SFTPAttributes {
         UInt(attrs.flags) & attrExtended != 0
     }
 }
+
+// MARK: - RemoteFileSystem 协议一致性
+extension SFTPConnection: RemoteFileSystem {
+    public func symlink(target: RemotePath, at path: RemotePath) async throws {
+        throw RemoteError.unsupported(.symbolicLinks)
+    }
+
+    public func chmod(_ path: RemotePath, _ mode: UInt16) async throws {
+        throw RemoteError.unsupported(.permissions)
+    }
+
+    public func statvfs(_ path: RemotePath) async throws -> RemoteVolumeInfo {
+        RemoteVolumeInfo(totalBytes: nil, availableBytes: nil)
+    }
+}
+

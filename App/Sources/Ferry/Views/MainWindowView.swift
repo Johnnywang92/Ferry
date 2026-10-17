@@ -88,6 +88,11 @@ public struct MainWindowView: View {
                 )
             }
 
+            // 传输队列面板（行高 44px，头部 28px，UI-REFERENCE.md §2.3）
+            if connectionService.isQueuePanelPresented {
+                TransferQueuePanelView()
+            }
+
             // 底部状态栏（26px）
             StatusBarView(
                 localSelectedCount: selectedLocalIDs.count,
@@ -192,6 +197,9 @@ public struct MainWindowView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ferryOpenPreferences)) { _ in
             showingPreferences = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryToggleTransferQueue)) { _ in
+            connectionService.isQueuePanelPresented.toggle()
         }
     }
 

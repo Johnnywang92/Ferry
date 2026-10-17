@@ -356,21 +356,19 @@ public struct RemotePaneView: View {
             }
         )
         .contextMenu {
-            if !item.isDirectory {
-                Button("下载到当前本地目录") {
-                    selectedIDs = [item.id]
-                    onDownloadSelected()
-                }
-                Divider()
-            } else {
+            Button(item.isDirectory ? "下载文件夹到当前本地目录" : "下载到当前本地目录") {
+                selectedIDs = [item.id]
+                onDownloadSelected()
+            }
+            if item.isDirectory {
                 Button("打开远程文件夹") {
                     Task {
                         await connectionService.navigateRemote(to: item.path)
                         selectedIDs.removeAll()
                     }
                 }
-                Divider()
             }
+            Divider()
             Button("复制远程路径") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(item.path.description, forType: .string)

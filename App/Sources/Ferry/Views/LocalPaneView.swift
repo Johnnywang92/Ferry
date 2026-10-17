@@ -294,19 +294,17 @@ public struct LocalPaneView: View {
             }
         )
         .contextMenu {
-            if !item.isDirectory {
-                Button("上传到当前远端目录") {
-                    selectedIDs = [item.id]
-                    onUploadSelected()
-                }
-                Divider()
-            } else {
+            Button(item.isDirectory ? "上传文件夹到当前远端目录" : "上传到当前远端目录") {
+                selectedIDs = [item.id]
+                onUploadSelected()
+            }
+            if item.isDirectory {
                 Button("打开文件夹") {
                     currentURL = item.url
                     selectedIDs.removeAll()
                 }
-                Divider()
             }
+            Divider()
             Button("在访达中显示") {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
             }

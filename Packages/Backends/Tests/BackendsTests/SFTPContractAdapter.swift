@@ -50,6 +50,10 @@ public struct SFTPContractAdapter: RemoteFileSystem {
         try await connection.openRead(path)
     }
 
+    public func openRead(_ path: RemotePath, offset: Int64) async throws -> any RemoteReader {
+        try await connection.openRead(path, offset: offset)
+    }
+
     public func createWrite(_ path: RemotePath, offset: Int64) async throws -> any RemoteWriter {
         try await connection.createWrite(path, offset: offset)
     }

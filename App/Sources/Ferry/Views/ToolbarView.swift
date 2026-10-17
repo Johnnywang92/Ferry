@@ -58,6 +58,13 @@ public struct ToolbarView: View {
 
                 toolbarButton(icon: "arrow.clockwise", label: "刷新", action: onRefresh)
 
+                toolbarButton(
+                    icon: connectionService.isQueuePanelPresented ? "tray.and.arrow.down.fill" : "tray.and.arrow.down",
+                    label: "队列",
+                    action: { connectionService.isQueuePanelPresented.toggle() }
+                )
+                .help("展开/收起传输队列 (⌘J)")
+
                 toolbarButton(icon: "arrow.triangle.swap", label: "同步", action: {})
                     .disabled(true) // M5 前未实现
                     .help("同步比较功能将于后续里程碑开放")
