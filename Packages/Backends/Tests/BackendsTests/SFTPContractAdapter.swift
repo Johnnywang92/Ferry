@@ -107,9 +107,9 @@ public struct SFTPContractAdapter: RemoteFileSystem {
 
     public var charsetConverter: CharsetConverter { cachedCharsetConverter }
 
-    public init(_ connection: SFTPConnection) async {
+    public init(_ connection: SFTPConnection) {
         self.connection = connection
-        self.cachedPathPolicy = await connection.pathPolicy
-        self.cachedCharsetConverter = await connection.charsetConverter
+        self.cachedPathPolicy = connection.pathPolicy
+        self.cachedCharsetConverter = connection.charsetConverter
     }
 }

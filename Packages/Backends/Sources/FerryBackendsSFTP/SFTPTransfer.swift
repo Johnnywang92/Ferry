@@ -222,10 +222,18 @@ extension SFTPConnection: RemoteTransfer {
     }
 
     /// 释放句柄。**只在没被取消的时候**发 `SSH_FXP_CLOSE`（D4：取消路径不做体面关闭）。
+    /// 一旦连接级或句柄级取消标志已置位，按 ADR-0001 K1/D4 与 M2 开工前定案一律硬拆转 `.aborted`，
+    /// 消除取消落在 chunk 之间与 chunk 之内的行为分歧。
     /// 表里的 id 无论如何都摘掉——`hardTeardown()` 之后那些指针已经不是合法内存了。
     func releaseFile(_ id: UInt64, handleCancel: CancellationFlag?) {
-        guard let file = openFiles.removeValue(forKey: id) else { return }
-        guard !cancelFlag.isSet, handleCancel?.isSet != true, let session, fd >= 0 else { return }
+        let removed = openFiles.removeValue(forKey: id)
+        if cancelFlag.isSet || handleCancel?.isSet == true {
+            if state != .aborted && state != .closed {
+                hardTeardown()
+            }
+            return
+        }
+        guard let file = removed, let session, fd >= 0 else { return }
         var loop = newLoop(session)
         _ = try? loop.drive(deadlineMs: operationBudget()) {
             libssh2_sftp_close_handle(file.pointer)
@@ -252,7 +260,8 @@ actor SFTPFileReader: RemoteReader {
         guard maxBytes > 0 else {
             throw RemoteError.protocolViolation("read(maxBytes:) 要正数，给了 \(maxBytes)")
         }
-        if handleCancel.isSet { throw CancellationError() }
+        // 不在此处短路抛 CancellationError：统一进 readChunk -> filesystemCall -> loop.drive，
+        // 由 drive 循环顶部检出取消并经 filesystemCall 闸门触发 hardTeardown 转 .aborted。
         return try await connection.readChunk(fileID, handleCancel: handleCancel, maxBytes: maxBytes)
     }
 
@@ -283,7 +292,6 @@ actor SFTPFileWriter: RemoteWriter {
         guard !finished else {
             throw RemoteError.protocolViolation("这个写句柄已经收尾了")
         }
-        if handleCancel.isSet { throw CancellationError() }
         pending.append(data)
 
         // 一直到 libssh2 把这一段全部确认完才返回。契约要求 `write` 的返回值能当

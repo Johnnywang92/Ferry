@@ -28,7 +28,7 @@ case "$APP" in
     *) echo "APP 路径异常：$APP" >&2; exit 1 ;;
 esac
 
-BUNDLE_ID="${FERRY_BUNDLE_ID:-local.ferry.Ferry}"
+BUNDLE_ID="${FERRY_BUNDLE_ID:-dev.ferry.app}"
 IDENTITY="${FERRY_SIGN_IDENTITY:--}"          # 空 = ad-hoc（"-"）
 HARDENED="${FERRY_HARDENED:-1}"
 CONFIG="${FERRY_CONFIG:-debug}"

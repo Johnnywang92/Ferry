@@ -31,8 +31,8 @@ extension SFTPConnection {
     private static let parentName: [UInt8] = [0x2E, 0x2E]
 
     /// 显示字符集与比较策略：都来自连接配置，不是每个路径自带（R5）。
-    public var charsetConverter: CharsetConverter { CharsetConverter(charset: request.charset) }
-    public var pathPolicy: PathPolicy { request.pathPolicy }
+    nonisolated public var charsetConverter: CharsetConverter { CharsetConverter(charset: request.charset) }
+    nonisolated public var pathPolicy: PathPolicy { request.pathPolicy }
 
     /// 登录后 `realpath(".")` 给的那个目录，已拿到过的话直接回。
     public var knownLoginDirectory: RemotePath? { loginDirectory }
@@ -494,6 +494,28 @@ extension SFTPConnection {
 
     private func path(_ bytes: [UInt8]) -> RemotePath {
         RemotePath(wireBytes: bytes, isAbsolute: bytes.first == 0x2F)
+    }
+
+    public func mkdir(_ path: RemotePath, permissions: UInt16? = nil) async throws {
+        try await filesystemCall { channel in
+            guard let session else { throw RemoteError.protocolViolation("session 已经不在了") }
+            let home = try loginDirectory(channel: channel)
+            let absolute = try PathResolver(homeDirectory: home).lexicalResolve(path, relativeTo: home)
+            var terminated = absolute.wireBytes
+            terminated.append(0)
+            let mode = Int(permissions ?? 0o755)
+            let length = UInt32(absolute.wireBytes.count)
+            var loop = newLoop(session)
+            let rc = try terminated.withUnsafeBytes { raw -> Int32 in
+                let pointer = raw.bindMemory(to: CChar.self).baseAddress!
+                return try loop.drive(deadlineMs: operationBudget()) {
+                    libssh2_sftp_mkdir_ex(channel, pointer, length, mode)
+                }
+            }
+            guard rc == 0 else {
+                throw sftpFailure(rc, channel: channel, operation: .mkdir, path: absolute)
+            }
+        }
     }
 }
 

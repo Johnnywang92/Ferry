@@ -21,7 +21,7 @@ public struct CharsetConverter: Hashable, Sendable {
     /// GBK、GB18030、EUC-CN 三个编码都能解成"中文"，latin1/cp1252 解成"ÖÐÎÄ"，
     /// Big5/EUC-KR/Shift-JIS/CP932 也能解、只是解成"笢恅/櫓匡/ﾖﾐﾎﾄ"这种像模像样的乱码。
     /// 命中多个不构成证据，所以字符集只能是连接上的配置，错了由出处标记暴露给用户。
-    public enum Charset: String, CaseIterable, Sendable {
+    public enum Charset: String, CaseIterable, Codable, Identifiable, Sendable {
         case utf8
         case gbk
         case gb18030
@@ -32,6 +32,23 @@ public struct CharsetConverter: Hashable, Sendable {
         case eucKR
         case isoLatin1
         case windowsCP1252
+
+        public var id: String { rawValue }
+
+        public var displayName: String {
+            switch self {
+            case .utf8: return "UTF-8"
+            case .gbk: return "GBK"
+            case .gb18030: return "GB18030"
+            case .big5: return "Big5"
+            case .eucCN: return "EUC-CN"
+            case .shiftJIS: return "Shift-JIS"
+            case .cp932: return "CP932"
+            case .eucKR: return "EUC-KR"
+            case .isoLatin1: return "ISO-8859-1"
+            case .windowsCP1252: return "Windows-1252"
+            }
+        }
 
         /// Foundation 的 `String.Encoding` 没有这些成员，只能经 CF 换算。
         ///
