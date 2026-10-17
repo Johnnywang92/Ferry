@@ -19,6 +19,8 @@ func milliseconds(of duration: Duration) -> Int64 {
 /// 对外一律通过 `SFTPConnection.Measure` 拷成值。
 final class LoopStats {
     var eagain = 0
+    /// `libssh2_sftp_write` 回 0 被当"没进展"重驱的次数（见 `drive(zeroMeansStall:)`）。
+    var zeroStalls = 0
     var polls = 0
     var pollTimeouts = 0
 }
@@ -32,13 +34,25 @@ struct SessionLoop {
     let fd: Int32
     let session: OpaquePointer
     let cancel: CancellationFlag
+    /// 句柄级取消（M1'-6）：只置标志的那一趟 chunk 调用观察它。
+    ///
+    /// 与 `cancel` 同一处检查、同一次生效——一个 chunk 之内也要能停，否则"取消一次下载"
+    /// 要等这一 chunk 跑完它的整串包。连接级取消仍然优先：它硬拆整条 session（D2/D4）。
+    let handleCancel: CancellationFlag?
     let stats: LoopStats
 
-    init(fd: Int32, session: OpaquePointer, cancel: CancellationFlag, stats: LoopStats = LoopStats()) {
+    init(fd: Int32, session: OpaquePointer, cancel: CancellationFlag,
+         handleCancel: CancellationFlag? = nil, stats: LoopStats = LoopStats()) {
         self.fd = fd
         self.session = session
         self.cancel = cancel
+        self.handleCancel = handleCancel
         self.stats = stats
+    }
+
+    /// 两个标志任一置位就算取消。
+    private var cancelled: Bool {
+        cancel.isSet || handleCancel?.isSet == true
     }
 
     /// `deadlineMs` 从进入本次调用起算；nil 表示不设总时限，只受取消控制。
@@ -46,25 +60,36 @@ struct SessionLoop {
     /// `pausedMs` 累计"不该算进预算"的毫秒数。只有 keyboard-interactive 用得上：
     /// 回调里等用户答题的那段时间发生在 `call()` 内部，算进预算就会出现
     /// "用户去找验证码的 40 秒被认证超时杀掉"（M1-04 §4）。
-    /// 返回最后一次调用的真实返回码（非 EAGAIN）。
+    ///
+    /// `zeroMeansStall` 只给 `libssh2_sftp_write` 用。它的"没进展"有**两种**长相：
+    /// EAGAIN，和 0（sftp.c:2292 "nothing was acked, and no EAGAIN was received"——
+    /// 包还没发完就跳出 ACK 循环，一个字节都没确认）。回 0 时 libssh2 不更新
+    /// `block_directions`，所以要按"两边都等"自己兜住，等完再交同一串字节。
+    /// 实测这一条在五台上的长相与触发条件见 M1-06 §2。
+    ///
+    /// 返回最后一次调用的真实返回码（非 EAGAIN、且非被当作停顿的 0）。
     @discardableResult
     mutating func drive(deadlineMs: Int64? = nil,
                         pausedMs: () -> Int64 = { 0 },
+                        zeroMeansStall: Bool = false,
                         _ call: () -> Int32) throws -> Int32 {
         let start = uptimeMilliseconds()
         var directionless = 0
 
         while true {
-            if cancel.isSet { throw CancellationError() }
+            if cancelled { throw CancellationError() }
 
             let rc = call()
-            if rc != LIBSSH2_ERROR_EAGAIN { return rc }
-            stats.eagain += 1
+            let stalled = rc == LIBSSH2_ERROR_EAGAIN || (zeroMeansStall && rc == 0)
+            if !stalled { return rc }
+            if rc == 0 { stats.zeroStalls += 1 } else { stats.eagain += 1 }
 
             let elapsed = uptimeMilliseconds() - start - pausedMs()
             if let deadlineMs, elapsed >= deadlineMs { throw RemoteError.network(.timeout) }
 
-            let directions = libssh2_session_block_directions(session)
+            var directions = libssh2_session_block_directions(session)
+            if directions == 0, rc == 0 { directions = LIBSSH2_SESSION_BLOCK_INBOUND
+                                            | LIBSSH2_SESSION_BLOCK_OUTBOUND }
             guard directions != 0 else {
                 // EAGAIN 却说不出要等哪一边：libssh2 的状态机自相矛盾。
                 // 不 sleep 就变成忙等，连吃三片直接判协议违规，不猜它想干嘛。

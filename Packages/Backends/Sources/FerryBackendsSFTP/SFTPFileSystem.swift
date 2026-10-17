@@ -158,7 +158,10 @@ extension SFTPConnection {
     /// 失败分两类，沿用认证那套判据（M1-04 §2）：服务器明确回了一个 SFTP 状态码
     /// 说明 transport 完好，连接留在 `.authenticated`，换个路径再调一次就行；
     /// 网络类失败、协议违规和被取消则硬拆转 `.aborted`。
-    private func filesystemCall<R>(_ body: (OpaquePointer) throws -> R) async throws -> R {
+    ///
+    /// internal 的理由与上面那批状态一样：传输在 `SFTPTransfer.swift` 的 extension 里，
+    /// 每一 chunk 都要过同一个闸门。
+    func filesystemCall<R>(_ body: (OpaquePointer) throws -> R) async throws -> R {
         switch state {
         case .idle, .connecting, .ready:
             throw RemoteError.protocolViolation(
@@ -206,12 +209,14 @@ extension SFTPConnection {
         }
     }
 
-    private func operationBudget() -> Int64 {
+    func operationBudget() -> Int64 {
         milliseconds(of: request.policy.fileOperationTimeout)
     }
 
-    private func newLoop(_ session: OpaquePointer) -> SessionLoop {
-        SessionLoop(fd: fd, session: session, cancel: cancelFlag, stats: loopStats)
+    /// `handleCancel` 只给传输那一族用：一个 chunk 之内也要能停（M1'-6）。
+    func newLoop(_ session: OpaquePointer, handleCancel: CancellationFlag? = nil) -> SessionLoop {
+        SessionLoop(fd: fd, session: session, cancel: cancelFlag, handleCancel: handleCancel,
+                    stats: loopStats)
     }
 
     // MARK: - 通道
@@ -243,7 +248,9 @@ extension SFTPConnection {
     ///
     /// 这里刻意传字面 `.`：基准目录必须由服务器给（2201 的 chroot 视图根是 `/`，
     /// 2202 是 `/home/tester`），而 `.` 是相对路径里唯一一条服务器认得的（M0b-01 §0.3）。
-    private func loginDirectory(channel: OpaquePointer) throws -> RemotePath {
+    /// internal 的理由同上面那批状态：`private` 是文件作用域，传输在
+    /// `SFTPTransfer.swift` 里也要拿这个基准做词法解析。
+    func loginDirectory(channel: OpaquePointer) throws -> RemotePath {
         if let cached = loginDirectory { return cached }
         let resolved = try readTarget([0x2E], channel: channel, kind: LIBSSH2_SFTP_REALPATH,
                                       operation: .realpath)
@@ -466,8 +473,8 @@ extension SFTPConnection {
     /// `CONNECTION_LOST`/`NO_SUCH_PATH`——`notFound` 会把同步引擎支去删本地文件，
     /// `connectionLost` 会让一个确定性失败变成可重试。这一族的失败一律走 `undetermined`：
     /// 宁可说"判不出成因"，也不给一个凭似乎是成因的码（实测见 M1-05 §9）。
-    private func sftpFailure(_ rc: Int32, channel: OpaquePointer, operation: RemoteOperation,
-                             path: RemotePath?, statusTrustworthy: Bool = true) -> RemoteError {
+    func sftpFailure(_ rc: Int32, channel: OpaquePointer, operation: RemoteOperation,
+                     path: RemotePath?, statusTrustworthy: Bool = true) -> RemoteError {
         let context = RemoteErrorContext(operation: operation, path: path)
         guard statusTrustworthy else {
             return RemoteError.operationFailed(OperationFailure(

@@ -50,6 +50,13 @@ public actor SFTPConnection: RemoteConnection {
     /// 只能问服务器，不能猜：2201 的 chroot 视图根是 `/`，2202 是 `/home/tester`
     /// （M0b-01 §3）。
     var loginDirectory: RemotePath?
+    /// 打开着的文件句柄。键是发给 reader/writer 的那个 id。
+    ///
+    /// 指针**留在连接 actor 上**，句柄对象只拿得到一个 `UInt64`：`OpaquePointer` 不是
+    /// `Sendable`，把它交给另一个 actor 就是让一条 session 可能被两处同时碰（违 D7）。
+    /// 记 id 而不是记指针，D7 就变成类型层面的事实。
+    var openFiles: [UInt64: ManagedFile] = [:]
+    var nextFileID: UInt64 = 1
     var fileStats = FileStats()
     var loopStats = LoopStats()
     var elapsedMs: Int64 = 0
@@ -102,12 +109,33 @@ public actor SFTPConnection: RemoteConnection {
         public var listCalls: Int = 0
         public var statCalls: Int = 0
         public var listingElapsedMs: Int64 = 0
+        /// `open_ex(OPENFILE)` 的次数。一条上下传应当各算一次开。
+        public var openCalls: Int = 0
+        /// 随开句柄附带的 `fstat` 次数——它是**额外一发往返**，记下来才知道省没省掉。
+        public var fstatCalls: Int = 0
+        public var readChunks: Int = 0
+        public var writeChunks: Int = 0
+        /// `libssh2_sftp_write` 返回正数（确认了一批字节）的次数。
+        /// 与 `writeChunks` 之比就是"一个 chunk 要几轮才确认完"，即 libssh2 在途队列的深度。
+        public var writeCredits: Int = 0
+        public var transferElapsedMs: Int64 = 0
     }
 
-    /// 握手与认证的实测数据，给测试和诊断报告用。
+    /// 一个开着的文件句柄。
+    struct ManagedFile {
+        let pointer: OpaquePointer
+        let path: RemotePath
+        /// 写句柄才需要 `fsync`；读句柄关闭时不必等服务器确认什么。
+        let writable: Bool
+    }
+
+    /// 握手与传输的实测数据，给测试和诊断报告用。
     public struct Measure: Sendable, Hashable {
         public let elapsedMs: Int64
         public let eagainCount: Int
+        /// `libssh2_sftp_write` 回 0、被重驱的次数。非零就说明"0 也是没进展"这条路
+        /// 在这次连接里真被走过（M1-06 §2）。
+        public let zeroStallCount: Int
         public let pollCount: Int
         public let pollTimeoutCount: Int
         public let executorThreads: [UInt64]
@@ -123,6 +151,7 @@ public actor SFTPConnection: RemoteConnection {
     public var measure: Measure {
         Measure(elapsedMs: elapsedMs,
                 eagainCount: loopStats.eagain,
+                zeroStallCount: loopStats.zeroStalls,
                 pollCount: loopStats.polls,
                 pollTimeoutCount: loopStats.pollTimeouts,
                 executorThreads: visitedThreads.sorted(),
@@ -290,6 +319,10 @@ public actor SFTPConnection: RemoteConnection {
         case .idle:
             state = .closed
         case .connecting, .ready, .authenticated:
+            // 顺序要紧：句柄 → 通道 → session。`SSH_FXP_CLOSE` 得往通道里写，
+            // 通道关了就没这条路了；调用方没 `commit()`/`abort()` 就走到这里的，
+            // 兜底把还开着的那些发掉，免得服务器上留一堆没关的文件。
+            for id in openFiles.keys { releaseFile(id, handleCancel: nil) }
             // 通道要在 session 之前关：`libssh2_sftp_shutdown` 内部要往通道写
             // `SSH_MSG_CHANNEL_CLOSE`，session 没了就没这条路了。
             shutdownChannel()
@@ -327,6 +360,9 @@ public actor SFTPConnection: RemoteConnection {
     /// 不发任何协议包、不等任何响应（ADR-0001 D4，实测 8.05 s → 0.20 s）。
     /// internal 的理由同上面那批状态：认证在另一个文件的 extension 里也要用它。
     func hardTeardown() {
+        // 句柄表必须清空：`libssh2_session_free` 之后这些指针指向的内存已经还给分配器，
+        // 留着 id 就等于留着一次 use-after-free 的机会。
+        openFiles.removeAll()
         if fd >= 0 {
             shutdown(fd, SHUT_RDWR)
             Darwin.close(fd)

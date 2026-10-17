@@ -70,7 +70,7 @@ struct SpikeRunner {
             PathOracleSpike.run()
         case "charset":
             CharsetProbe.run()
-        case "handshake", "auth", "listing":
+        case "handshake", "auth", "listing", "transfer", "xfer-raw":
             // 正式实现是 actor，探针要等它跑完，用信号量把 main() 钉住。
             // 但 main() 隐含 @MainActor：Task {} 会继承主执行器，而主线程正卡在
             // done.wait() 上，任务永远轮不到执行——所以必须显式离开主线程。
@@ -81,6 +81,8 @@ struct SpikeRunner {
                     switch mode {
                     case "auth": await AuthSpike.run()
                     case "listing": await ListingSpike.run()
+                    case "transfer": await TransferSpike.run()
+                    case "xfer-raw": await TransferRawSpike.run()
                     default: await HandshakeProbe.run()
                     }
                     done.signal()
