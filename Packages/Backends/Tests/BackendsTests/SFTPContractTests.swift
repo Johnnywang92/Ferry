@@ -86,7 +86,8 @@ private func connected(port: Int, charset: CharsetConverter.Charset = .gbk) asyn
     return connection
 }
 
-@Suite("契约套件 × SFTP 后端", .serialized)
+@Suite("契约套件 × SFTP 后端", .serialized,
+       .enabled(if: liveServersEnabled, "真机契约要显式开启：FERRY_LIVE_SERVERS=1（并先跑 seed-contract-corpus.sh）"))
 struct SFTPContractTests {
 
     /// 五台真机各跑一遍同一套用例。
@@ -96,9 +97,6 @@ struct SFTPContractTests {
     /// 刚写进去的内容，结论随机翻转——那比红还难查。
     @Test("首批契约用例在 SFTP 后端上全绿")
     func contractSuitePassesOnLiveServers() async throws {
-        try await #require(liveServersEnabled,
-                           "真机契约要显式开启：FERRY_LIVE_SERVERS=1（并先跑 seed-contract-corpus.sh）")
-
         var report: [String] = []
         var failures: [String] = []
 
@@ -121,7 +119,7 @@ struct SFTPContractTests {
             }
 
             let subject = ContractSubject(label: "sftp:\(port)",
-                                          fileSystem: await SFTPContractAdapter(connection),
+                                          fileSystem: SFTPContractAdapter(connection),
                                           capabilities: sftpCapabilities, corpusRoot: root)
             let results = await FileSystemContract.run(subject)
             let passed = results.values.filter { $0.isPassed }.count
@@ -146,17 +144,16 @@ struct SFTPContractTests {
     }
 
     /// 语料缺失必须让**依赖语料的格子**失败或跳过。
-///
-/// 这一格是给整套框架上的一把锁：契约里多数格子写"没语料就跳过"，
-/// 那在真机上是合理的（SFTP 给不出"权限位缺席"这种条目），可一旦语料脚本
-/// 整个挂了，全部格子一起跳过，报告就是一片绿——比红更危险。
-///
-/// 第一版这里断言"一格 passed 都不该有"，跑出来是红的：`..` 越界钳制与尾部斜杠
-/// 那两格**对任何根都成立**，它们本来就该绿。所以正确的断言是"绝大多数格子
-/// 没法绿"——留一个下限，让"语料整个没铺"和"语料缺一小块"能区分开。
-@Test("语料整体缺失时依赖语料的格子不会假装全绿")
+    ///
+    /// 这一格是给整套框架上的一把锁：契约里多数格子写"没语料就跳过"，
+    /// 那在真机上是合理的（SFTP 给不出"权限位缺席"这种条目），可一旦语料脚本
+    /// 整个挂了，全部格子一起跳过，报告就是一片绿——比红更危险。
+    ///
+    /// 第一版这里断言"一格 passed 都不该有"，跑出来是红的：`..` 越界钳制与尾部斜杠
+    /// 那两格**对任何根都成立**，它们本来就该绿。所以正确的断言是"绝大多数格子
+    /// 没法绿"——留一个下限，让"语料整个没铺"和"语料缺一小块"能区分开。
+    @Test("语料整体缺失时依赖语料的格子不会假装全绿")
     func missingCorpusIsVisible() async throws {
-        try await #require(liveServersEnabled)
         let connection = try await connected(port: selectedPorts.first ?? 2202)
         defer { Task { await connection.close() } }
 
@@ -164,7 +161,7 @@ struct SFTPContractTests {
         let absent = try PathResolver.child(of: try await connection.homeDirectory(),
                                             name: Array("spike/contract-absent-\(UUID().uuidString)".utf8))
         let subject = ContractSubject(label: "sftp:absent-corpus",
-                                      fileSystem: await SFTPContractAdapter(connection),
+                                      fileSystem: SFTPContractAdapter(connection),
                                       capabilities: sftpCapabilities, corpusRoot: absent)
         let results = await FileSystemContract.run(subject)
 
@@ -188,7 +185,6 @@ struct SFTPContractTests {
     /// 时候测的是一个不断变化的集合，绿了也不知道绿的是什么。
     @Test("清单可重入：两次列出的条目集合完全一致")
     func listingIsRepeatable() async throws {
-        try await #require(liveServersEnabled)
         let connection = try await connected(port: selectedPorts.first ?? 2202)
         defer { Task { await connection.close() } }
 
@@ -208,7 +204,6 @@ struct SFTPContractTests {
     /// 软链永远显示成目标，而同步引擎按这个类型去递归或去读。
     @Test("stat 与 lstat 对软链给出不同类型")
     func statFollowsLinksButLstatDoesNot() async throws {
-        try await #require(liveServersEnabled)
         let connection = try await connected(port: selectedPorts.first ?? 2202)
         defer { Task { await connection.close() } }
 

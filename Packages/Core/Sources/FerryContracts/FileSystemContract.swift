@@ -287,8 +287,9 @@ public enum FileSystemContract {
             // 视图根是 `/`，服务器给的 longentry 与客户端拼的字节可能差一段前缀）。
             // 第一轮这一格在 2201 上红，报的是"路径与请求的不一致"——那是 chroot
             // 视图的正常表现，不是缺陷。真正要守的是"没有做有损替换"。
+            let shownItem = item.path.displayString().lowercased()
             guard !item.path.wireBytes.contains(0x3F),
-                  item.path.displayString().contains("\\xCE") || item.path.displayString().contains("\\xC4") else {
+                  shownItem.contains("\\xce") || shownItem.contains("\\xc4") else {
                 return .failed("返回的路径里 GBK 字节没了："
                                + item.path.wireBytes.map { String(format: "%02X", $0) }.joined(separator: " "))
             }
