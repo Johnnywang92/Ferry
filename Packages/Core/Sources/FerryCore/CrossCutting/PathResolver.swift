@@ -106,6 +106,24 @@ public struct PathResolver: Sendable {
         return RemotePath(wireBytes: bytes, isAbsolute: true)
     }
 
+    /// 获取路径的父目录。若已是根目录 `/`，返回根目录自身。
+    public static func parent(of path: RemotePath) throws -> RemotePath {
+        guard !path.wireBytes.contains(nul) else { throw PathResolutionError.nulByte }
+        guard path.wireBytes.first == separator else { throw PathResolutionError.baseNotAbsolute }
+        var bytes = path.wireBytes
+        while bytes.count > 1 && bytes.last == separator {
+            bytes.removeLast()
+        }
+        guard let lastSlash = bytes.lastIndex(of: separator) else {
+            return root
+        }
+        if lastSlash == 0 {
+            return root
+        }
+        return RemotePath(wireBytes: Array(bytes[0..<lastSlash]), isAbsolute: true)
+    }
+
+
     /// 走一遍段序列：基准目录必须先规范化，再作为已解析前缀接上输入。
     /// `collapseParent == false` 时保留 `..`，交给软链循环处理。
     private func walk(_ path: RemotePath, relativeTo base: RemotePath, collapseParent: Bool) throws -> [[UInt8]] {

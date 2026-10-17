@@ -1,5 +1,7 @@
 import AppKit
+import FerryCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct LocalPaneView: View {
     @Binding var currentURL: URL
@@ -16,6 +18,9 @@ public struct LocalPaneView: View {
     @State private var sortAscending: Bool = true
     @State private var isEditingPath: Bool = false
     @State private var editedPathText: String = ""
+    @State private var isDropTargeted: Bool = false
+    @State private var targetedFolderID: String? = nil
+
 
     private var theme: FerryTheme {
         themeManager.theme(for: colorScheme)
@@ -190,6 +195,15 @@ public struct LocalPaneView: View {
                     }
                 }
                 .background(theme.bg)
+                .onDrop(of: [.fileURL, UTType(FerryUTI.remoteItemIdentifier) ?? .item], isTargeted: $isDropTargeted) { providers in
+                    handleDrop(providers: providers, targetDirectory: currentURL)
+                }
+                .overlay(
+                    isDropTargeted ?
+                        Rectangle()
+                            .stroke(theme.accentColor, lineWidth: 2)
+                        : nil
+                )
                 .contextMenu {
                     Button("新建本地文件夹…") {
                         onNewLocalFolder()
@@ -298,6 +312,11 @@ public struct LocalPaneView: View {
                 selectedIDs = [item.id]
                 onUploadSelected()
             }
+            if !item.isDirectory {
+                Button("快速预览 (Quick Look)") {
+                    QuickLookService.shared.togglePreview(localURL: item.url)
+                }
+            }
             if item.isDirectory {
                 Button("打开文件夹") {
                     currentURL = item.url
@@ -317,7 +336,48 @@ public struct LocalPaneView: View {
                 onNewLocalFolder()
             }
         }
+        .onDrag {
+            selectedIDs = [item.id]
+            return NSItemProvider(object: item.url as NSURL)
+        }
+        .onDrop(of: [.fileURL, UTType(FerryUTI.remoteItemIdentifier) ?? .item], isTargeted: Binding(
+            get: { targetedFolderID == item.id },
+            set: { if $0 { targetedFolderID = item.id } else if targetedFolderID == item.id { targetedFolderID = nil } }
+        )) { providers in
+            if item.isDirectory {
+                return handleDrop(providers: providers, targetDirectory: item.url)
+            }
+            return false
+        }
+        .overlay(
+            targetedFolderID == item.id && item.isDirectory ?
+                RoundedRectangle(cornerRadius: FerryRadius.r4)
+                    .stroke(theme.accentColor, lineWidth: 2)
+                : nil
+        )
     }
+
+    private func handleDrop(providers: [NSItemProvider], targetDirectory: URL) -> Bool {
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(FerryUTI.remoteItemIdentifier) {
+                provider.loadDataRepresentation(forTypeIdentifier: FerryUTI.remoteItemIdentifier) { data, _ in
+                    guard let data = data else { return }
+                    let bytes = Array(data)
+                    let remotePath = RemotePath(wireBytes: bytes, isAbsolute: true)
+                    Task { @MainActor in
+                        if let item = ConnectionService.shared.remoteItems.first(where: { $0.path == remotePath }) {
+                            ConnectionService.shared.downloadItems([item], to: targetDirectory) {
+                                NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
+                            }
+                        }
+                    }
+                }
+                return true
+            }
+        }
+        return false
+    }
+
 
     private func commitPathEdit() {
         isEditingPath = false

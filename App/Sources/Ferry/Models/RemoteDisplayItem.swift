@@ -20,6 +20,11 @@ public struct RemoteDisplayItem: Identifiable, Hashable, Sendable {
         rawNameBytes.first == 0x2E
     }
 
+    public var modificationDate: Date? {
+        mtime
+    }
+
+
     public init(item: RemoteItem, charsetConverter: CharsetConverter, linkResolution: RemoteDirectoryListing.LinkResolution? = nil) {
         // 从 path.wireBytes 中提取文件名部分（权威字节，不做 String 往返）
         let wire = item.path.wireBytes

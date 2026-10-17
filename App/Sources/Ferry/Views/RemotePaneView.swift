@@ -1,6 +1,7 @@
 import AppKit
 import FerryCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct RemotePaneView: View {
     @Binding var selectedIDs: Set<String>
@@ -17,6 +18,9 @@ public struct RemotePaneView: View {
     @State private var sortAscending: Bool = true
     @State private var isEditingPath: Bool = false
     @State private var editedPathText: String = ""
+    @State private var isDropTargeted: Bool = false
+    @State private var targetedFolderID: String? = nil
+
 
     private var theme: FerryTheme {
         themeManager.theme(for: colorScheme)
@@ -202,6 +206,15 @@ public struct RemotePaneView: View {
                     }
                 }
                 .background(theme.bg)
+                .onDrop(of: [.fileURL, UTType(FerryUTI.remoteItemIdentifier) ?? .item], isTargeted: $isDropTargeted) { providers in
+                    handleDrop(providers: providers, targetDirectory: nil)
+                }
+                .overlay(
+                    isDropTargeted ?
+                        Rectangle()
+                            .stroke(theme.accentColor, lineWidth: 2)
+                        : nil
+                )
                 .contextMenu {
                     Button("新建远程文件夹…") {
                         onNewRemoteFolder()
@@ -360,6 +373,22 @@ public struct RemotePaneView: View {
                 selectedIDs = [item.id]
                 onDownloadSelected()
             }
+            if !item.isDirectory {
+                Button("用外部编辑器打开") {
+                    Task {
+                        try? await ExternalEditService.shared.openForEditing(
+                            remoteItem: item,
+                            connection: connectionService.activeConnection
+                        )
+                    }
+                }
+                Button("快速预览 (Quick Look)") {
+                    QuickLookService.shared.togglePreview(
+                        remoteItem: item,
+                        connection: connectionService.activeConnection
+                    )
+                }
+            }
             if item.isDirectory {
                 Button("打开远程文件夹") {
                     Task {
@@ -378,5 +407,67 @@ public struct RemotePaneView: View {
                 onNewRemoteFolder()
             }
         }
+        .onDrag {
+            selectedIDs = [item.id]
+            return FerryDragDropService.shared.createItemProvider(for: item)
+        }
+        .onDrop(of: [.fileURL, UTType(FerryUTI.remoteItemIdentifier) ?? .item], isTargeted: Binding(
+            get: { targetedFolderID == item.id },
+            set: { if $0 { targetedFolderID = item.id } else if targetedFolderID == item.id { targetedFolderID = nil } }
+        )) { providers in
+            if item.isDirectory {
+                return handleDrop(providers: providers, targetDirectory: item.path)
+            }
+            return false
+        }
+        .overlay(
+            targetedFolderID == item.id && item.isDirectory ?
+                RoundedRectangle(cornerRadius: FerryRadius.r4)
+                    .stroke(theme.accentColor, lineWidth: 2)
+                : nil
+        )
+    }
+
+    private func handleDrop(providers: [NSItemProvider], targetDirectory: RemotePath?) -> Bool {
+        guard let destDir = targetDirectory ?? connectionService.currentRemotePath else { return false }
+        var handled = false
+
+        for provider in providers {
+            // 场景 1: 同面板远端移动到子目录（远端 → 远端，v2.3 §368）
+            if provider.hasItemConformingToTypeIdentifier(FerryUTI.remoteItemIdentifier) {
+                provider.loadDataRepresentation(forTypeIdentifier: FerryUTI.remoteItemIdentifier) { data, _ in
+                    guard let data = data else { return }
+                    let bytes = Array(data)
+                    let sourcePath = RemotePath(wireBytes: bytes, isAbsolute: true)
+                    Task { @MainActor in
+                        _ = await FerryDragDropService.shared.moveRemoteItem(sourcePath, toDestinationDirectory: destDir)
+                    }
+                }
+                handled = true
+                continue
+            }
+
+            // 场景 2: 本地文件或 Finder 文件拖入上传（本地 → 远端 / Finder → 远端）
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    let url: URL?
+                    if let u = item as? URL {
+                        url = u
+                    } else if let data = item as? Data, let str = String(data: data, encoding: .utf8) {
+                        url = URL(string: str)
+                    } else {
+                        url = nil
+                    }
+                    if let fileURL = url {
+                        Task { @MainActor in
+                            connectionService.uploadFiles([fileURL])
+                        }
+                    }
+                }
+                handled = true
+            }
+        }
+        return handled
     }
 }
+

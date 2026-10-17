@@ -1,6 +1,10 @@
 import SwiftUI
 
 public enum FerryFont {
+    /// 14px 弹窗大标题
+    public static let titleBold = Font.system(size: 14, weight: .semibold)
+
+
     /// 13px 正文
     public static let body = Font.system(size: 13, weight: .regular)
     public static let bodyMedium = Font.system(size: 13, weight: .medium)

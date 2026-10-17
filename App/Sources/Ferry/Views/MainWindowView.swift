@@ -50,6 +50,9 @@ public struct MainWindowView: View {
                 onDisconnect: handleDisconnect
             )
 
+            // M4: 外部编辑“正在监视”状态条（v2.3 §381）
+            ExternalEditMonitoringBanner()
+
             // 主体区域：左侧栏 + 双栏列表
             HStack(spacing: 0) {
                 // 左侧栏（220px）
@@ -185,6 +188,26 @@ public struct MainWindowView: View {
                 }
             }
         }
+        // M4: 文件冲突策略解决弹窗（UI-REFERENCE.md §5）
+        .sheet(isPresented: Binding(
+            get: { connectionService.pendingConflictContext != nil },
+            set: { if !$0 { connectionService.cancelConflict() } }
+        )) {
+            if let ctx = connectionService.pendingConflictContext {
+                FileConflictDialogView(
+                    conflict: ctx.item,
+                    totalConflicts: ctx.totalCount,
+                    remainingConflicts: ctx.remainingCount,
+                    onResolve: { decision, applyToAll in
+                        connectionService.resolveConflict(decision: decision, applyToAll: applyToAll)
+                    },
+                    onCancel: {
+                        connectionService.cancelConflict()
+                    }
+                )
+            }
+        }
+
         .onReceive(NotificationCenter.default.publisher(for: .ferryOpenNewConnection)) { _ in
             selectedBookmark = nil
             showingNewConnection = true
@@ -201,7 +224,33 @@ public struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .ferryToggleTransferQueue)) { _ in
             connectionService.isQueuePanelPresented.toggle()
         }
+        // M4: 空格键触发快速预览（Quick Look，v2.3 §374）
+        .background(
+            Button("") {
+                handleQuickLook()
+            }
+            .keyboardShortcut(.space, modifiers: [])
+            .opacity(0)
+        )
+        .onDisappear {
+            QuickLookService.shared.cleanUpTempFiles()
+            ExternalEditService.shared.closeAllSessions()
+        }
     }
+
+    private func handleQuickLook() {
+        if let remoteId = selectedRemoteIDs.first,
+           let item = connectionService.remoteItems.first(where: { $0.id == remoteId }) {
+            QuickLookService.shared.togglePreview(
+                remoteItem: item,
+                connection: connectionService.activeConnection
+            )
+        } else if let localId = selectedLocalIDs.first {
+            let url = URL(fileURLWithPath: localId)
+            QuickLookService.shared.togglePreview(localURL: url)
+        }
+    }
+
 
     private var isRemoteConnected: Bool {
         if case .connected = connectionService.state { return true }

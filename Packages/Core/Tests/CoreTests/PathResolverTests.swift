@@ -190,3 +190,12 @@ func symlinkWithBaseAndHome() throws {
     #expect(resolved.displayString() == "/srv/data/x")
     #expect(links.lookedUp == ["/home", "/home/u", "/srv", "/srv/data", "/srv/data/x"])
 }
+
+@Test("获取父目录 parent(of:)：根目录返回根，多级路径正确回退")
+func parentOfPath() throws {
+    #expect(try PathResolver.parent(of: path("/")).displayString() == "/")
+    #expect(try PathResolver.parent(of: path("/var")).displayString() == "/")
+    #expect(try PathResolver.parent(of: path("/var/www/html")).displayString() == "/var/www")
+    #expect(try PathResolver.parent(of: path("/var/www/html/")).displayString() == "/var/www")
+}
+

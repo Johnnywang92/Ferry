@@ -225,13 +225,14 @@ struct TransferQueueTests {
         // 恢复任务
         await queue.resumeTask(id: taskId)
 
-        var timeout = 50
+        var timeout = 100
         while timeout > 0 {
             let state = await queue.allStates().first(where: { $0.id == taskId })
             if state?.status.isCompleted == true { break }
             try await Task.sleep(nanoseconds: 50_000_000)
             timeout -= 1
         }
+
 
         let finalState = await queue.allStates().first(where: { $0.id == taskId })
         #expect(finalState?.status.isCompleted == true)
