@@ -221,6 +221,61 @@ public struct PreferencesSheetView: View {
                     .padding(14)
                     .background(theme.panel)
                     .cornerRadius(FerryRadius.r8)
+
+                    // 4. 自动更新（M6 Sparkle 集成，v2.3 §524）
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("软件更新")
+                                .font(FerryFont.subheadlineBold)
+                                .foregroundColor(theme.text)
+                            Spacer()
+                            Button("检查更新…") {
+                                Task {
+                                    await UpdaterService.shared.checkForUpdates()
+                                }
+                            }
+                            .disabled(UpdaterService.shared.isChecking)
+                        }
+
+                        HStack {
+                            Toggle("自动检查更新", isOn: Bindable(UpdaterService.shared).isAutoCheckEnabled)
+                                .font(FerryFont.subheadline)
+                                .foregroundColor(theme.text)
+                                .toggleStyle(.checkbox)
+
+                            Spacer()
+
+                            if let msg = UpdaterService.shared.statusMessage {
+                                Text(msg)
+                                    .font(FerryFont.caption)
+                                    .foregroundColor(theme.text2)
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .background(theme.panel)
+                    .cornerRadius(FerryRadius.r8)
+
+                    // 5. 诊断报告一键导出（M6 可观测性，v2.3 §470-472）
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("诊断报告与故障排查")
+                                    .font(FerryFont.subheadlineBold)
+                                    .foregroundColor(theme.text)
+                                Text("导出包含系统环境、连接状态（已脱敏密码/私钥）、队列状况与错误码建议的 JSON 报告。")
+                                    .font(FerryFont.caption)
+                                    .foregroundColor(theme.text3)
+                            }
+                            Spacer()
+                            Button("导出诊断报告…") {
+                                exportDiagnosticReport()
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .background(theme.panel)
+                    .cornerRadius(FerryRadius.r8)
                 }
                 .padding(24)
             }
@@ -277,5 +332,29 @@ public struct PreferencesSheetView: View {
         Ferry 独立记录：\(ferryCount) 条（\(ferryURL.path)）
         系统只读兼容：\(userCount) 条（~/.ssh/known_hosts）
         """
+    }
+
+    private func exportDiagnosticReport() {
+        Task {
+            let logs = await DiagnosticLogger.shared.entries()
+            let report = DiagnosticReportService.shared.buildReport(
+                connectionService: ConnectionService.shared,
+                logs: logs
+            )
+
+            guard let data = try? DiagnosticReportService.shared.exportReportJSON(report: report) else {
+                return
+            }
+
+            await MainActor.run {
+                let panel = NSSavePanel()
+                panel.title = "导出 Ferry 诊断报告"
+                panel.nameFieldStringValue = "Ferry-Diagnostics-\(Int(Date().timeIntervalSince1970)).json"
+                panel.allowedContentTypes = [.json]
+                if panel.runModal() == .OK, let url = panel.url {
+                    try? data.write(to: url)
+                }
+            }
+        }
     }
 }

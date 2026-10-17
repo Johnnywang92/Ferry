@@ -15,9 +15,14 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.0.1</string>
+	<string>1.0.0-beta.1</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>100</string>
+	<!-- Sparkle 自动更新配置（M6，v2.3 §524） -->
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/yifanwang/Ferry/master/appcast.xml</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 	<key>LSMinimumSystemVersion</key>
 	<string>15.0</string>
 	<!-- 图形应用，在 Dock 和菜单栏正常呈现 -->

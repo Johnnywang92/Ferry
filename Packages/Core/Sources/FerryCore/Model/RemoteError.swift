@@ -107,6 +107,75 @@ extension RemoteError {
         case .operationFailed(let failure): failure.diagnosticCode
         }
     }
+
+    /// 错误码到可读排查建议映射表（v2.3 §472）。
+    public var actionableAdvice: String {
+        switch self {
+        case .network(let kind):
+            switch kind {
+            case .connectionRefused:
+                return "服务器拒绝连接。请检查服务器对应端口（SFTP 默认 22，FTP 默认 21）是否已开启并监听，或检查防火墙规则。"
+            case .hostUnreachable:
+                return "目标主机不可达。请检查本机网络或代理设置，并核对服务器 IP/域名是否正确。"
+            case .timeout:
+                return "网络操作超时。网络连接可能不稳定或服务器未及时响应，建议稍后重试。"
+            case .connectionLost:
+                return "网络连接意外中断。若发生在大文件传输过程中，Ferry 支持断点续传，重试将从当前进度继续。"
+            case .dnsFailure:
+                return "域名解析失败。请检查本机 DNS 设置或直接尝试使用服务器 IP 地址。"
+            }
+
+        case .auth(let failure):
+            switch failure {
+            case .badPassword:
+                return "登录密码错误。请确认所填写的密码无误后重试。"
+            case .keyRejected:
+                return "服务器拒绝了提供的 SSH 密钥。请确认该公钥已添加至服务器的 ~/.ssh/authorized_keys 中。"
+            case .passphraseRequired:
+                return "该私钥文件已加密，需要输入口令（Passphrase）才能解锁。"
+            case .passphraseIncorrect:
+                return "私钥口令不正确。请重新输入正确的口令。"
+            case .tooManyAuthAttempts:
+                return "认证失败次数过多，已被服务器暂时断开。请稍候重试。"
+            case .methodNotOffered:
+                return "服务器不接受所选的认证机制。请检查服务器 sshd 配置。"
+            case .agentUnavailable:
+                return "无法连接到 ssh-agent。请确认 $SSH_AUTH_SOCK 环境变量已正确设置且 agent 正在运行。"
+            }
+
+        case .hostKeyMismatch(let fingerprint):
+            return "【安全警示】服务器公钥指纹变更（\(fingerprint)）！可能存在中间人攻击或服务器已重装系统，请在偏好设置中核验并确认。"
+
+        case .permissionDenied:
+            return "服务器权限不足（Permission Denied）。请确认目标文件或目录具备相应读写权限。"
+
+        case .notFound:
+            return "指定的文件或目录不存在。可能已被移除或路径输入有误。"
+
+        case .keyCollision:
+            return "文件名大小写或 Unicode 归一化碰撞冲突（NFC/NFD）。为避免静默覆盖已有文件，操作已暂停。"
+
+        case .undecodablePath:
+            return "文件名不是合法 UTF-8。Ferry 已按原始字节安全保护，您可在站点设置中切换字符集（如 GBK/GB18030）。"
+
+        case .unsupported:
+            return "服务器不支持当前请求的操作功能。"
+
+        case .protocolViolation(let msg):
+            return "协议交互异常：\(msg)。"
+
+        case .localIO(let kind):
+            switch kind {
+            case .diskFull:
+                return "本地磁盘空间不足。请释放部分磁盘空间后重试。"
+            case .writeFailed, .readFailed:
+                return "本地文件读写失败。请检查本地目录访问权限。"
+            }
+
+        case .operationFailed(let op):
+            return "服务器操作失败（\(op.diagnosticCode)）。请检查目标路径状态或查看详细日志。"
+        }
+    }
 }
 
 extension OperationFailure {

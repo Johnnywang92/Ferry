@@ -411,7 +411,7 @@ public actor FTPConnection: RemoteConnection, RemoteFileSystem {
         }
     }
 
-    private func mapCurlError(_ code: CURLcode, path: RemotePath?, operation: RemoteOperation) -> RemoteError {
+    nonisolated package func mapCurlError(_ code: CURLcode, path: RemotePath?, operation: RemoteOperation) -> RemoteError {
         switch code {
         case CURLE_LOGIN_DENIED:
             return .auth(.badPassword)
