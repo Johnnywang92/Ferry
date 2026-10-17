@@ -62,7 +62,15 @@ let package = Package(
         ),
         .testTarget(
             name: "BackendsTests",
-            dependencies: ["FerryBackendsSFTP", "CLibssh2"]
+            dependencies: [
+                "FerryBackendsSFTP",
+                "CLibssh2",
+                // 契约套件本身：它住在 Core 那个 package 里，两边 import 的是同一个
+                // 模块，所以"同一套用例跑两个后端"是类型层面的事实（M1' 出口标准）。
+                // 少了这一行，本目录那份 SFTPContractTests 就是在跑一份抄来的代码，
+                // 抽象一旦破掉没人会发现——那正是契约测试要防的事。
+                .product(name: "FerryContracts", package: "Core")
+            ]
         )
     ]
 )
