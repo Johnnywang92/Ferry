@@ -10,6 +10,7 @@ public struct MainWindowView: View {
     @State private var showingNewConnection: Bool = false
     @State private var showingPreferences: Bool = false
     @State private var showingGoToFolder: Bool = false
+    @State private var showingSyncSheet: Bool = false
     @State private var showingNewFolderSheet: Bool = false
     @State private var newFolderName: String = ""
     @State private var newFolderTargetIsRemote: Bool = false
@@ -47,6 +48,9 @@ public struct MainWindowView: View {
                     showingNewFolderSheet = true
                 },
                 onRefresh: handleRefresh,
+                onSync: {
+                    showingSyncSheet = true
+                },
                 onDisconnect: handleDisconnect
             )
 
@@ -204,6 +208,18 @@ public struct MainWindowView: View {
                     onCancel: {
                         connectionService.cancelConflict()
                     }
+                )
+            }
+        }
+        // M5: 文件夹双向同步与 DiffPlan 弹窗（v2.3 §384-434, U4）
+        .sheet(isPresented: $showingSyncSheet) {
+            if let remotePath = connectionService.currentRemotePath,
+               let fileSystem = connectionService.activeConnection {
+                SyncSheetView(
+                    isPresented: $showingSyncSheet,
+                    localURL: currentLocalURL,
+                    remotePath: remotePath,
+                    fileSystem: fileSystem
                 )
             }
         }

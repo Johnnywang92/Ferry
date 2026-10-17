@@ -36,6 +36,7 @@ let package = Package(
     platforms: [.macOS(.v15)],
     products: [
         .library(name: "FerryBackendsSFTP", targets: ["FerryBackendsSFTP"]),
+        .library(name: "FerryBackendsFTP", targets: ["FerryBackendsFTP"]),
         // spike 期要在"临时链 Homebrew"和"链正式产物"之间来回切，
         // 所以把 C 壳单独做成产品，模块名两边都叫 CLibssh2。
         .library(name: "FerrySSHShim", targets: ["CLibssh2"])
@@ -54,9 +55,22 @@ let package = Package(
             ]
         ),
         .target(
+            name: "CLibcurl",
+            linkerSettings: [
+                .linkedLibrary("curl")
+            ]
+        ),
+        .target(
             name: "FerryBackendsSFTP",
             dependencies: [
                 "CLibssh2",
+                .product(name: "FerryCore", package: "Core")
+            ]
+        ),
+        .target(
+            name: "FerryBackendsFTP",
+            dependencies: [
+                "CLibcurl",
                 .product(name: "FerryCore", package: "Core")
             ]
         ),
@@ -64,7 +78,9 @@ let package = Package(
             name: "BackendsTests",
             dependencies: [
                 "FerryBackendsSFTP",
+                "FerryBackendsFTP",
                 "CLibssh2",
+                "CLibcurl",
                 // 契约套件本身：它住在 Core 那个 package 里，两边 import 的是同一个
                 // 模块，所以"同一套用例跑两个后端"是类型层面的事实（M1' 出口标准）。
                 // 少了这一行，本目录那份 SFTPContractTests 就是在跑一份抄来的代码，

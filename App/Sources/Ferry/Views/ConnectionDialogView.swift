@@ -1,4 +1,5 @@
 import AppKit
+import FerryBackendsFTP
 import FerryBackendsSFTP
 import FerryCore
 import SwiftUI
@@ -349,10 +350,13 @@ public struct ConnectionDialogView: View {
             case .sshAgent:
                 authMethod = .sshAgent
             case .anonymous:
-                testResult = "SFTP 暂不支持匿名"
-                testSuccess = false
-                isTesting = false
-                return
+                if bookmark.protocolType == .sftp {
+                    testResult = "SFTP 暂不支持匿名认证"
+                    testSuccess = false
+                    isTesting = false
+                    return
+                }
+                authMethod = .anonymous
             }
 
             var policy = ConnectionPolicy.standard
@@ -365,9 +369,22 @@ public struct ConnectionDialogView: View {
                 )
             }
 
-            let req = ConnectionRequest(endpoint: endpoint, authentication: authMethod, policy: policy)
-            let dummyTrust = AutoAcceptHostKeyTrust()
-            let conn = SFTPConnection(request: req, hostKeyTrust: dummyTrust)
+            let req = ConnectionRequest(
+                endpoint: endpoint,
+                authentication: authMethod,
+                policy: policy,
+                charset: bookmark.charset,
+                pathPolicy: .posix
+            )
+
+            let conn: any RemoteConnection
+            if bookmark.protocolType == .sftp {
+                let dummyTrust = AutoAcceptHostKeyTrust()
+                conn = SFTPConnection(request: req, hostKeyTrust: dummyTrust)
+            } else {
+                let isFTPS = bookmark.protocolType == .ftps
+                conn = FTPConnection(request: req, isFTPS: isFTPS)
+            }
 
             do {
                 _ = try await conn.handshake()

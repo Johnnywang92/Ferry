@@ -67,10 +67,10 @@ public struct RemotePath: Hashable, Sendable, Codable {
 
 /// 跨端对齐用的派生键，由 `wireBytes` 经 NFC（及可选大小写折叠）得到。
 /// 永不回写远端。
-public struct ComparisonKey: Hashable, Sendable {
+public struct ComparisonKey: Hashable, Sendable, Codable {
     public let bytes: [UInt8]
 
-    init(wireBytes: [UInt8], pathPolicy: PathPolicy) {
+    public init(wireBytes: [UInt8], pathPolicy: PathPolicy) {
         let string = String(decoding: wireBytes, as: UTF8.self)
         let normalized = pathPolicy.normalizeForCompare
             ? string.precomposedStringWithCanonicalMapping
@@ -78,10 +78,14 @@ public struct ComparisonKey: Hashable, Sendable {
         let folded = pathPolicy.caseSensitive ? normalized : normalized.lowercased()
         self.bytes = Array(folded.utf8)
     }
+
+    public init(string: String, pathPolicy: PathPolicy) {
+        self.init(wireBytes: Array(string.utf8), pathPolicy: pathPolicy)
+    }
 }
 
 /// 大小写与归一化策略属于连接/文件系统，不属于单个路径实例。
-public struct PathPolicy: Sendable, Hashable {
+public struct PathPolicy: Sendable, Hashable, Codable {
     public let caseSensitive: Bool
     public let normalizeForCompare: Bool
 

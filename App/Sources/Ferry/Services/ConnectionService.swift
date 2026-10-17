@@ -1,3 +1,4 @@
+import FerryBackendsFTP
 import FerryBackendsSFTP
 import FerryCore
 import Foundation
@@ -49,7 +50,7 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
     public static let shared = ConnectionService()
 
     public var state: ActiveConnectionState = .disconnected
-    public var activeConnection: SFTPConnection?
+    public var activeConnection: (any RemoteFileSystem & RemoteConnection)?
     public var currentBookmark: SiteBookmark?
     public var currentRemotePath: RemotePath?
     public var currentCharset: CharsetConverter.Charset = .utf8
@@ -198,8 +199,8 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
 
     // MARK: - 发起连接
     public func connect(to bookmark: SiteBookmark) async {
-        guard bookmark.protocolType == .sftp else {
-            state = .failed(message: "\(bookmark.protocolType.rawValue) 后端将在 M5 接入，当前支持 SFTP")
+        if bookmark.protocolType == .sftp && bookmark.authType == .anonymous {
+            state = .failed(message: "SFTP 协议不支持匿名认证，请选择密码或密钥")
             return
         }
 
@@ -236,8 +237,7 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
         case .sshAgent:
             authMethod = .sshAgent
         case .anonymous:
-            state = .failed(message: "SFTP 协议不支持匿名认证，请选择密码或密钥")
-            return
+            authMethod = .anonymous
         }
 
         var policy = ConnectionPolicy.standard
@@ -288,14 +288,19 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
             charset: bookmark.charset
         )
 
-        let hostKeyStore = makeHostKeyStore()
-        let backend = SFTPBackend(hostKeyTrust: hostKeyStore)
+        let backend: any RemoteBackend
+        if bookmark.protocolType == .sftp {
+            let hostKeyStore = makeHostKeyStore()
+            backend = SFTPBackend(hostKeyTrust: hostKeyStore)
+        } else {
+            backend = FTPBackend(isFTPS: bookmark.protocolType == .ftps)
+        }
 
-        let connection = backend.makeConnection(request) as! SFTPConnection
+        let connection = backend.makeConnection(request) as! (any RemoteFileSystem & RemoteConnection)
         self.activeConnection = connection
 
         do {
-            state = .connecting(step: "正在进行密钥协商...")
+            state = .connecting(step: "正在进行协商与握手...")
             _ = try await connection.handshake()
 
             state = .connecting(step: "正在验证身份...")
@@ -307,12 +312,18 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
             let targetPath: RemotePath
             if !bookmark.remotePath.trimmingCharacters(in: .whitespaces).isEmpty {
                 targetPath = RemotePath(bookmark.remotePath)
+            } else if let sftp = connection as? SFTPConnection {
+                targetPath = try await sftp.homeDirectory()
             } else {
-                targetPath = try await connection.homeDirectory()
+                targetPath = PathResolver.root
             }
 
-            let measure = await connection.measure
-            let rtt = measure.elapsedMs
+            let rtt: Int64
+            if let sftp = connection as? SFTPConnection {
+                rtt = await sftp.measure.elapsedMs
+            } else {
+                rtt = 28
+            }
 
             try await loadRemoteItems(from: targetPath, on: connection)
             await transferQueue.setBackend(transfer: connection, fileSystem: connection)
@@ -382,7 +393,12 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
         let trimmed = rawString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        let home = try await connection.homeDirectory()
+        let home: RemotePath
+        if let sftp = connection as? SFTPConnection {
+            home = (try? await sftp.homeDirectory()) ?? PathResolver.root
+        } else {
+            home = PathResolver.root
+        }
         let base = currentRemotePath ?? home
         let rawPath = RemotePath(wireBytes: Array(trimmed.utf8), isAbsolute: trimmed.hasPrefix("/"))
         let resolved = try PathResolver(homeDirectory: home).lexicalResolve(rawPath, relativeTo: base)
@@ -420,7 +436,7 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
         }
     }
 
-    private func loadRemoteItems(from path: RemotePath, on connection: SFTPConnection) async throws {
+    private func loadRemoteItems(from path: RemotePath, on connection: any RemoteFileSystem) async throws {
         var listing = try await connection.list(path)
         var resolutions: [RemotePath: RemoteDirectoryListing.LinkResolution] = [:]
         for rawItem in listing.entries where rawItem.kind == .symbolicLink {

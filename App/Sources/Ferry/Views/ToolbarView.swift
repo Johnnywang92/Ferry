@@ -9,6 +9,7 @@ public struct ToolbarView: View {
     var onDownload: () -> Void
     var onNewFolder: () -> Void
     var onRefresh: () -> Void
+    var onSync: () -> Void
     var onDisconnect: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -65,9 +66,9 @@ public struct ToolbarView: View {
                 )
                 .help("展开/收起传输队列 (⌘J)")
 
-                toolbarButton(icon: "arrow.triangle.swap", label: "同步", action: {})
-                    .disabled(true) // M5 前未实现
-                    .help("同步比较功能将于后续里程碑开放")
+                toolbarButton(icon: "arrow.triangle.swap", label: "同步", action: onSync)
+                    .disabled(!isConnected)
+                    .help("文件夹双向同步与差异计划 (DiffPlan)")
 
                 if isConnected {
                     toolbarButton(icon: "bolt.slash.circle", label: "断开连接", action: onDisconnect)

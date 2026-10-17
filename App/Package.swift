@@ -20,7 +20,8 @@ let package = Package(
             dependencies: [
                 .product(name: "FerryCore", package: "Core"),
                 .product(name: "FerrySSHShim", package: "Backends"),
-                .product(name: "FerryBackendsSFTP", package: "Backends")
+                .product(name: "FerryBackendsSFTP", package: "Backends"),
+                .product(name: "FerryBackendsFTP", package: "Backends")
             ],
             path: "Sources/Ferry"
         )

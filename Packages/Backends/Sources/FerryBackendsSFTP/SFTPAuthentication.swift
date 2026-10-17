@@ -304,6 +304,8 @@ extension SFTPConnection {
             try requireMethod("publickey", offered: offered)
             return try driveAgent(handle: handle, loop: &loop, budget: budget,
                                   context: context, offered: offered)
+        case .anonymous:
+            throw RemoteError.auth(.methodNotOffered)
         }
     }
 

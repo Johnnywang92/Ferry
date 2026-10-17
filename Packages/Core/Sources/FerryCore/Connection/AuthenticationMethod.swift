@@ -16,6 +16,8 @@ public enum AuthenticationMethod: Sendable, Hashable {
     /// 服务器发 prompt、UI 逐条应答。应答通道是异步回调，进不了 Hashable，
     /// 所以 M1'-4 用单独的回调参数传，这里只表示"方式是这个"。
     case keyboardInteractive
+    /// FTP 匿名登录（UI-REFERENCE.md U10）。
+    case anonymous
 }
 
 public struct PrivateKeyMaterial: Sendable, Hashable {
@@ -36,6 +38,7 @@ extension AuthenticationMethod: CustomStringConvertible {
             "privateKey(\(material.keyData.count) B, \(material.passphrase == nil ? "无口令" : "口令已隐藏"))"
         case .sshAgent: "sshAgent"
         case .keyboardInteractive: "keyboardInteractive"
+        case .anonymous: "anonymous"
         }
     }
 }
