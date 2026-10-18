@@ -21,6 +21,7 @@ public struct RemotePaneView: View {
     @State private var editedPathText: String = ""
     @State private var isDropTargeted: Bool = false
     @State private var targetedFolderID: String? = nil
+    @State private var itemToDelete: RemoteDisplayItem? = nil
 
 
     private var theme: FerryTheme {
@@ -236,6 +237,29 @@ public struct RemotePaneView: View {
                 }
             }
         }
+        .alert(
+            itemToDelete?.isDirectory == true ? "永久删除远程文件夹" : "永久删除远程文件",
+            isPresented: Binding(
+                get: { itemToDelete != nil },
+                set: { if !$0 { itemToDelete = nil } }
+            ),
+            presenting: itemToDelete
+        ) { item in
+            Button("取消", role: .cancel) {
+                itemToDelete = nil
+            }
+            Button("永久删除", role: .destructive) {
+                Task {
+                    let result = await connectionService.deleteRemoteItem(item)
+                    if result.success {
+                        selectedIDs.remove(item.id)
+                    }
+                }
+                itemToDelete = nil
+            }
+        } message: { item in
+            Text("确定要从远程服务器上永久删除“\(item.name)”吗？此操作无法撤销。")
+        }
     }
 
     private func columnHeader(title: String, field: BrowserSortField, alignment: Alignment) -> some View {
@@ -401,6 +425,11 @@ public struct RemotePaneView: View {
             Divider()
             Button("重命名…") {
                 onRenameRemote(item)
+            }
+            Button(role: .destructive) {
+                itemToDelete = item
+            } label: {
+                Text(item.isDirectory ? "删除文件夹…" : "删除文件…")
             }
             Button("复制远程路径") {
                 NSPasteboard.general.clearContents()

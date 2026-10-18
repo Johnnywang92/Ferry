@@ -504,6 +504,22 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
         }
     }
 
+    public func deleteRemoteItem(_ item: RemoteDisplayItem) async -> (success: Bool, error: String?) {
+        guard let connection = activeConnection else {
+            return (false, "未连接到远程服务器")
+        }
+        do {
+            try await connection.remove(item.path, recursive: true)
+            await refreshRemote()
+            return (true, nil)
+        } catch let remoteError as RemoteError {
+            let readable = Self.readableMessage(for: remoteError)
+            return (false, readable)
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
     private func loadRemoteItems(from path: RemotePath, on connection: any RemoteFileSystem) async throws {
         var listing = try await connection.list(path)
         var resolutions: [RemotePath: RemoteDirectoryListing.LinkResolution] = [:]

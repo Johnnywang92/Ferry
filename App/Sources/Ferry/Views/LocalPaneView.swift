@@ -21,6 +21,7 @@ public struct LocalPaneView: View {
     @State private var editedPathText: String = ""
     @State private var isDropTargeted: Bool = false
     @State private var targetedFolderID: String? = nil
+    @State private var itemToDelete: LocalItem? = nil
 
 
     private var theme: FerryTheme {
@@ -228,6 +229,30 @@ public struct LocalPaneView: View {
         .onReceive(NotificationCenter.default.publisher(for: .ferryRefreshLocalPane)) { _ in
             loadDirectory()
         }
+        .alert(
+            itemToDelete?.isDirectory == true ? "删除本地文件夹" : "删除本地文件",
+            isPresented: Binding(
+                get: { itemToDelete != nil },
+                set: { if !$0 { itemToDelete = nil } }
+            ),
+            presenting: itemToDelete
+        ) { item in
+            Button("取消", role: .cancel) {
+                itemToDelete = nil
+            }
+            Button("移到废纸篓", role: .destructive) {
+                do {
+                    try LocalFileSystemService.shared.deleteItem(at: item.url)
+                    selectedIDs.remove(item.id)
+                    loadDirectory()
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+                itemToDelete = nil
+            }
+        } message: { item in
+            Text("确定要将“\(item.name)”移到废纸篓吗？")
+        }
     }
 
     private func columnHeader(title: String, field: BrowserSortField, alignment: Alignment) -> some View {
@@ -327,6 +352,11 @@ public struct LocalPaneView: View {
             Divider()
             Button("重命名…") {
                 onRenameLocal(item)
+            }
+            Button(role: .destructive) {
+                itemToDelete = item
+            } label: {
+                Text(item.isDirectory ? "删除文件夹…" : "删除文件…")
             }
             Button("在访达中显示") {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])

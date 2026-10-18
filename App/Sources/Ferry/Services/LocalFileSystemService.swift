@@ -103,4 +103,12 @@ public final class LocalFileSystemService: Sendable {
         try FileManager.default.moveItem(at: sourceURL, to: targetURL)
         return targetURL
     }
+
+    public func deleteItem(at url: URL) throws {
+        do {
+            try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        } catch {
+            try FileManager.default.removeItem(at: url)
+        }
+    }
 }
