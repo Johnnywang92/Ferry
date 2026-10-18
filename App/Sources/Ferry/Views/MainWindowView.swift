@@ -12,6 +12,8 @@ public struct MainWindowView: View {
     @State private var showingGoToFolder: Bool = false
     @State private var showingSyncSheet: Bool = false
     @State private var showingNewFolderSheet: Bool = false
+    @State private var showingHelpSheet: Bool = false
+    @State private var initialHelpTab: HelpTab = .gettingStarted
     @State private var newFolderTargetIsRemote: Bool = false
     @State private var itemToRename: RenameTarget? = nil
     @State private var searchText: String = ""
@@ -282,6 +284,10 @@ public struct MainWindowView: View {
                 )
             }
         }
+        // Ferry 帮助与使用指南弹窗
+        .sheet(isPresented: $showingHelpSheet) {
+            HelpSheetView(initialTab: initialHelpTab, isPresented: $showingHelpSheet)
+        }
 
         .onReceive(NotificationCenter.default.publisher(for: .ferryOpenNewConnection)) { _ in
             selectedBookmark = nil
@@ -298,6 +304,17 @@ public struct MainWindowView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ferryToggleTransferQueue)) { _ in
             connectionService.isQueuePanelPresented.toggle()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryOpenHelp)) { _ in
+            initialHelpTab = .gettingStarted
+            showingHelpSheet = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryOpenShortcuts)) { _ in
+            initialHelpTab = .shortcuts
+            showingHelpSheet = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryExportDiagnosticReport)) { _ in
+            exportDiagnosticReport()
         }
         // M4: 空格键触发快速预览（Quick Look，v2.3 §374）
         .background(
@@ -371,6 +388,30 @@ public struct MainWindowView: View {
         Task {
             await connectionService.disconnect()
             selectedRemoteIDs.removeAll()
+        }
+    }
+
+    private func exportDiagnosticReport() {
+        Task {
+            let logs = await DiagnosticLogger.shared.entries()
+            let report = DiagnosticReportService.shared.buildReport(
+                connectionService: ConnectionService.shared,
+                logs: logs
+            )
+
+            guard let data = try? DiagnosticReportService.shared.exportReportJSON(report: report) else {
+                return
+            }
+
+            await MainActor.run {
+                let panel = NSSavePanel()
+                panel.title = "导出 Ferry 诊断报告"
+                panel.nameFieldStringValue = "Ferry-Diagnostics-\(Int(Date().timeIntervalSince1970)).json"
+                panel.allowedContentTypes = [.json]
+                if panel.runModal() == .OK, let url = panel.url {
+                    try? data.write(to: url)
+                }
+            }
         }
     }
 }

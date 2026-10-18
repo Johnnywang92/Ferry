@@ -119,6 +119,7 @@ swift test --package-path Packages/Backends
 
 ## 📂 架构文档索引
 
+- [docs/USER-GUIDE.md](docs/USER-GUIDE.md)：Ferry 完整用户指南、功能操作手册与快捷键速查矩阵
 - [docs/ADR-0000-启动前决策.md](docs/ADR-0000-启动前决策.md)：项目前置决策、架构原则与里程碑划分
 - [docs/UI-REFERENCE.md](docs/UI-REFERENCE.md)：Ferry 原生调色板、布局尺寸规范与交互参考
 - [docs/SANDBOX-MIGRATION.md](docs/SANDBOX-MIGRATION.md)：App Sandbox 安全作用域书签迁移与上架指引
