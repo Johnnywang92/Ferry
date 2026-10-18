@@ -19,6 +19,7 @@ public struct RemotePaneView: View {
     @State private var sortAscending: Bool = true
     @State private var isEditingPath: Bool = false
     @State private var editedPathText: String = ""
+    @FocusState private var isPathFieldFocused: Bool
     @State private var isDropTargeted: Bool = false
     @State private var targetedFolderID: String? = nil
     @State private var itemToDelete: RemoteDisplayItem? = nil
@@ -90,13 +91,12 @@ public struct RemotePaneView: View {
                             RoundedRectangle(cornerRadius: FerryRadius.r4)
                                 .stroke(theme.accentColor, lineWidth: 1)
                         )
+                        .focused($isPathFieldFocused)
                         .onSubmit {
-                            let target = editedPathText
-                            isEditingPath = false
-                            Task {
-                                try? await connectionService.navigateRemote(toPathString: target)
-                                selectedIDs.removeAll()
-                            }
+                            commitPathEdit()
+                        }
+                        .onExitCommand {
+                            cancelPathEdit()
                         }
                 } else {
                     HStack(spacing: 4) {
@@ -123,6 +123,7 @@ public struct RemotePaneView: View {
                         if isConnected {
                             editedPathText = currentRemotePathString
                             isEditingPath = true
+                            isPathFieldFocused = true
                         }
                     }
                     .help(isConnected ? "点击直接输入远程路径，或按 ⌘⇧G 前往文件夹" : "连接后可浏览远程路径")
@@ -130,6 +131,7 @@ public struct RemotePaneView: View {
 
                 // 返回上一级
                 Button(action: {
+                    cancelPathEdit()
                     Task {
                         await connectionService.navigateRemoteUp()
                         selectedIDs.removeAll()
@@ -148,6 +150,7 @@ public struct RemotePaneView: View {
 
                 // 刷新
                 Button(action: {
+                    cancelPathEdit()
                     Task { await connectionService.refreshRemote() }
                 }) {
                     Image(systemName: "arrow.clockwise")
@@ -170,6 +173,38 @@ public struct RemotePaneView: View {
                     .foregroundColor(theme.line),
                 alignment: .bottom
             )
+
+            // 远程操作与路径跳转错误提示条
+            if let navError = connectionService.navigationErrorMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.warningOrange)
+                    Text(navError)
+                        .font(FerryFont.caption)
+                        .foregroundColor(theme.text)
+                        .lineLimit(1)
+                    Spacer()
+                    Button(action: {
+                        connectionService.navigationErrorMessage = nil
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(theme.text3)
+                    }
+                    .buttonStyle(.plain)
+                    .help("忽略提示")
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(theme.warningOrange.opacity(0.12))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(theme.warningOrange.opacity(0.3)),
+                    alignment: .bottom
+                )
+            }
 
             // 表头：名称 / 修改时间 / 大小 / 权限（支持点击排序）
             HStack(spacing: 0) {
@@ -260,6 +295,45 @@ public struct RemotePaneView: View {
         } message: { item in
             Text("确定要从远程服务器上永久删除“\(item.name)”吗？此操作无法撤销。")
         }
+        .onChange(of: connectionService.currentRemotePath) { _, newPath in
+            isEditingPath = false
+            isPathFieldFocused = false
+            editedPathText = newPath?.description ?? ""
+        }
+        .onChange(of: connectionService.state) { _, _ in
+            isEditingPath = false
+            isPathFieldFocused = false
+            editedPathText = currentRemotePathString
+        }
+        .onChange(of: isPathFieldFocused) { _, focused in
+            if !focused && isEditingPath {
+                commitPathEdit()
+            }
+        }
+    }
+
+    private func commitPathEdit() {
+        let target = editedPathText.trimmingCharacters(in: .whitespacesAndNewlines)
+        isEditingPath = false
+        isPathFieldFocused = false
+        guard !target.isEmpty else {
+            editedPathText = currentRemotePathString
+            return
+        }
+        Task {
+            do {
+                try await connectionService.navigateRemote(toPathString: target)
+                selectedIDs.removeAll()
+            } catch {
+                editedPathText = currentRemotePathString
+            }
+        }
+    }
+
+    private func cancelPathEdit() {
+        isEditingPath = false
+        isPathFieldFocused = false
+        editedPathText = currentRemotePathString
     }
 
     private func columnHeader(title: String, field: BrowserSortField, alignment: Alignment) -> some View {
@@ -386,6 +460,7 @@ public struct RemotePaneView: View {
         .simultaneousGesture(
             TapGesture(count: 2).onEnded {
                 if item.isDirectory {
+                    cancelPathEdit()
                     Task {
                         await connectionService.navigateRemote(to: item.path)
                         selectedIDs.removeAll()
@@ -416,6 +491,7 @@ public struct RemotePaneView: View {
             }
             if item.isDirectory {
                 Button("打开远程文件夹") {
+                    cancelPathEdit()
                     Task {
                         await connectionService.navigateRemote(to: item.path)
                         selectedIDs.removeAll()

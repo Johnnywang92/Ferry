@@ -415,22 +415,30 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
         }
     }
 
-    /// 供 `⌘⇧G` 前往路径与路径栏编辑跳转使用（支持 `~`、相对路径与绝对路径）。
     public func navigateRemote(toPathString rawString: String) async throws {
         guard let connection = activeConnection else { return }
         let trimmed = rawString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        navigationErrorMessage = nil
 
-        let home: RemotePath
-        if let sftp = connection as? SFTPConnection {
-            home = (try? await sftp.homeDirectory()) ?? PathResolver.root
-        } else {
-            home = PathResolver.root
+        do {
+            let home: RemotePath
+            if let sftp = connection as? SFTPConnection {
+                home = (try? await sftp.homeDirectory()) ?? PathResolver.root
+            } else {
+                home = PathResolver.root
+            }
+            let base = currentRemotePath ?? home
+            let rawPath = RemotePath(wireBytes: Array(trimmed.utf8), isAbsolute: trimmed.hasPrefix("/"))
+            let resolved = try PathResolver(homeDirectory: home).lexicalResolve(rawPath, relativeTo: base)
+            try await loadRemoteItems(from: resolved, on: connection)
+        } catch let remoteError as RemoteError {
+            navigationErrorMessage = Self.readableMessage(for: remoteError)
+            throw remoteError
+        } catch {
+            navigationErrorMessage = error.localizedDescription
+            throw error
         }
-        let base = currentRemotePath ?? home
-        let rawPath = RemotePath(wireBytes: Array(trimmed.utf8), isAbsolute: trimmed.hasPrefix("/"))
-        let resolved = try PathResolver(homeDirectory: home).lexicalResolve(rawPath, relativeTo: base)
-        try await loadRemoteItems(from: resolved, on: connection)
     }
 
     public func refreshRemote() async {
