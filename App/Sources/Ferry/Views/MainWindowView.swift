@@ -12,7 +12,6 @@ public struct MainWindowView: View {
     @State private var showingGoToFolder: Bool = false
     @State private var showingSyncSheet: Bool = false
     @State private var showingNewFolderSheet: Bool = false
-    @State private var newFolderName: String = ""
     @State private var newFolderTargetIsRemote: Bool = false
     @State private var searchText: String = ""
 
@@ -44,7 +43,6 @@ public struct MainWindowView: View {
                     } else {
                         newFolderTargetIsRemote = false
                     }
-                    newFolderName = ""
                     showingNewFolderSheet = true
                 },
                 onRefresh: handleRefresh,
@@ -84,12 +82,10 @@ public struct MainWindowView: View {
                     onDownloadSelected: handleDownload,
                     onNewLocalFolder: {
                         newFolderTargetIsRemote = false
-                        newFolderName = ""
                         showingNewFolderSheet = true
                     },
                     onNewRemoteFolder: {
                         newFolderTargetIsRemote = true
-                        newFolderName = ""
                         showingNewFolderSheet = true
                     }
                 )
@@ -151,7 +147,22 @@ public struct MainWindowView: View {
         }
         // 新建文件夹弹窗
         .sheet(isPresented: $showingNewFolderSheet) {
-            newFolderDialog
+            NewFolderDialog(
+                isPresented: $showingNewFolderSheet,
+                isRemote: $newFolderTargetIsRemote,
+                isRemoteConnected: isRemoteConnected,
+                localURL: currentLocalURL,
+                remotePathString: connectionService.currentRemotePath?.description ?? "/",
+                onCreateLocal: { name in
+                    _ = try? LocalFileSystemService.shared.createDirectory(named: name, in: currentLocalURL)
+                    NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
+                },
+                onCreateRemote: { name in
+                    Task {
+                        await connectionService.createRemoteFolder(named: name)
+                    }
+                }
+            )
         }
         // TOFU 主机密钥询问弹窗
         .sheet(isPresented: Binding(
@@ -273,62 +284,7 @@ public struct MainWindowView: View {
         return false
     }
 
-    private var newFolderDialog: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(newFolderTargetIsRemote ? "新建远程文件夹" : "新建本地文件夹")
-                .font(FerryFont.bodyBold)
-                .foregroundColor(theme.text)
 
-            if isRemoteConnected {
-                Picker("位置", selection: $newFolderTargetIsRemote) {
-                    Text("本地 (\(currentLocalURL.lastPathComponent))").tag(false)
-                    Text("远程 (\(connectionService.currentRemotePath?.description ?? "/"))").tag(true)
-                }
-                .pickerStyle(.segmented)
-            }
-
-            TextField("文件夹名称", text: $newFolderName)
-                .textFieldStyle(.roundedBorder)
-                .font(FerryFont.body)
-                .onSubmit {
-                    confirmCreateFolder()
-                }
-
-            HStack {
-                Button("取消") {
-                    showingNewFolderSheet = false
-                }
-                .keyboardShortcut(.cancelAction)
-
-                Spacer()
-
-                Button("创建") {
-                    confirmCreateFolder()
-                }
-                .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .tint(theme.accentColor)
-                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding(20)
-        .frame(width: 380)
-        .background(theme.bg)
-    }
-
-    private func confirmCreateFolder() {
-        let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        showingNewFolderSheet = false
-        if newFolderTargetIsRemote {
-            Task {
-                await connectionService.createRemoteFolder(named: name)
-            }
-        } else {
-            _ = try? LocalFileSystemService.shared.createDirectory(named: name, in: currentLocalURL)
-            NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
-        }
-    }
 
     private func connectToSite(_ site: SiteBookmark) {
         let resolved = site.localBookmark.resolveURL()
