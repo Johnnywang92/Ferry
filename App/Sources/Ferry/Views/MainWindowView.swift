@@ -87,6 +87,7 @@ public struct MainWindowView: View {
                     selectedBookmark: $selectedBookmark,
                     showingNewConnection: $showingNewConnection,
                     showingPreferences: $showingPreferences,
+                    currentLocalURL: currentLocalURL,
                     onConnectSite: { site in
                         connectToSite(site)
                     },

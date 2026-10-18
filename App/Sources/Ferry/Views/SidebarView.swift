@@ -4,12 +4,16 @@ public struct SidebarView: View {
     @Binding var selectedBookmark: SiteBookmark?
     @Binding var showingNewConnection: Bool
     @Binding var showingPreferences: Bool
+    var currentLocalURL: URL? = nil
     var onConnectSite: (SiteBookmark) -> Void
     var onSelectLocalLocation: (URL) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     private var siteStore: SiteStore { SiteStore.shared }
-    @State private var localLocations: [LocalLocation] = LocalLocation.defaults
+    private var locationStore: LocalLocationStore { LocalLocationStore.shared }
+
+    @State private var showingLocationDialog: Bool = false
+    @State private var locationToEdit: LocalLocation? = nil
 
     private var theme: FerryTheme {
         ThemeManager.shared.theme(for: colorScheme)
@@ -60,14 +64,52 @@ public struct SidebarView: View {
 
                     // 本地位置分组
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("本地位置")
-                            .font(FerryFont.captionBold)
-                            .foregroundColor(theme.text3)
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 4)
+                        HStack(spacing: 8) {
+                            Text("本地位置")
+                                .font(FerryFont.captionBold)
+                                .foregroundColor(theme.text3)
+                            Spacer()
+                            Button(action: {
+                                locationToEdit = nil
+                                showingLocationDialog = true
+                            }) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(theme.text2)
+                            }
+                            .buttonStyle(.plain)
+                            .help("添加本地位置")
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.top, 4)
+                        .padding(.bottom, 4)
+                        .contextMenu {
+                            Button("添加本地位置…") {
+                                locationToEdit = nil
+                                showingLocationDialog = true
+                            }
+                            Button("恢复默认位置") {
+                                Task { await locationStore.resetToDefaults() }
+                            }
+                        }
 
-                        ForEach(localLocations) { loc in
-                            localLocationRow(loc)
+                        if locationStore.locations.isEmpty {
+                            VStack(spacing: 6) {
+                                Text("暂无快捷位置")
+                                    .font(FerryFont.caption)
+                                    .foregroundColor(theme.text3)
+                                Button("恢复默认位置") {
+                                    Task { await locationStore.resetToDefaults() }
+                                }
+                                .font(FerryFont.caption)
+                                .buttonStyle(.link)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        } else {
+                            ForEach(locationStore.locations) { loc in
+                                localLocationRow(loc)
+                            }
                         }
                     }
                 }
@@ -104,6 +146,22 @@ public struct SidebarView: View {
                 .foregroundColor(theme.line),
             alignment: .trailing
         )
+        .sheet(isPresented: $showingLocationDialog) {
+            LocalLocationEditDialog(
+                isPresented: $showingLocationDialog,
+                initialLocation: locationToEdit,
+                defaultDirectory: currentLocalURL,
+                onSave: { savedLocation in
+                    Task {
+                        if locationToEdit != nil {
+                            await locationStore.update(savedLocation)
+                        } else {
+                            await locationStore.add(savedLocation)
+                        }
+                    }
+                }
+            )
+        }
     }
 
     private func siteRow(_ site: SiteBookmark) -> some View {
@@ -201,5 +259,26 @@ public struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 8)
+        .contextMenu {
+            Button("在访达中显示") {
+                NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: location.url.path)
+            }
+            Divider()
+            Button("编辑…") {
+                locationToEdit = location
+                showingLocationDialog = true
+            }
+            Button("从侧边栏移除", role: .destructive) {
+                Task {
+                    await locationStore.delete(id: location.id)
+                }
+            }
+            Divider()
+            Button("恢复默认位置") {
+                Task {
+                    await locationStore.resetToDefaults()
+                }
+            }
+        }
     }
 }

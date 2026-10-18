@@ -246,27 +246,3 @@ public struct SiteBookmark: Codable, Identifiable, Hashable, Sendable {
         )
     ]
 }
-
-/// 本地常用快速位置
-public struct LocalLocation: Identifiable, Hashable, Sendable {
-    public let id: String
-    public let name: String
-    public let iconName: String
-    public let url: URL
-
-    public static var defaults: [LocalLocation] {
-        let fm = FileManager.default
-        let home = fm.homeDirectoryForCurrentUser
-        return [
-            LocalLocation(id: "home", name: "个人主目录", iconName: "house", url: home),
-            LocalLocation(id: "desktop", name: "桌面", iconName: "desktopcomputer",
-                          url: fm.urls(for: .desktopDirectory, in: .userDomainMask).first ?? home.appendingPathComponent("Desktop")),
-            LocalLocation(id: "documents", name: "文稿", iconName: "doc",
-                          url: fm.urls(for: .documentDirectory, in: .userDomainMask).first ?? home.appendingPathComponent("Documents")),
-            LocalLocation(id: "downloads", name: "下载", iconName: "arrow.down.circle",
-                          url: fm.urls(for: .downloadsDirectory, in: .userDomainMask).first ?? home.appendingPathComponent("Downloads")),
-            LocalLocation(id: "projects", name: "Projects", iconName: "folder",
-                          url: home.appendingPathComponent("Projects"))
-        ]
-    }
-}
