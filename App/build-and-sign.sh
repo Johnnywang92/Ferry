@@ -97,7 +97,7 @@ spctl --assess --type execute --verbose "$APP" 2>&1 | sed 's/^/  /' || true
 
 echo "== 5. 启动：直接 exec 拿探针结论"
 set +e
-"$APP/Contents/MacOS/Ferry" ${probe_args[@]+"${probe_args[@]}"} > "$PROBE_LOG" 2>&1
+"$APP/Contents/MacOS/Ferry" --probe ${probe_args[@]+"${probe_args[@]}"} > "$PROBE_LOG" 2>&1
 PROBE_RC=$?
 set -e
 sed 's/^/  /' "$PROBE_LOG"
