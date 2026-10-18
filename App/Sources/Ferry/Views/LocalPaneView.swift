@@ -197,7 +197,10 @@ public struct LocalPaneView: View {
                     }
                 }
                 .background(theme.bg)
-                .onDrop(of: [.fileURL, UTType(FerryUTI.remoteItemIdentifier) ?? .item], isTargeted: $isDropTargeted) { providers in
+                .onDrop(
+                    of: [.fileURL, .url, FerryUTI.remoteItemType, FerryUTI.localItemType, UTType(FerryUTI.promisedFileIdentifier) ?? .data],
+                    isTargeted: $isDropTargeted
+                ) { providers in
                     handleDrop(providers: providers, targetDirectory: currentURL)
                 }
                 .overlay(
@@ -371,13 +374,19 @@ public struct LocalPaneView: View {
             }
         }
         .onDrag {
-            selectedIDs = [item.id]
-            return NSItemProvider(object: item.url as NSURL)
+            if !selectedIDs.contains(item.id) {
+                selectedIDs = [item.id]
+            }
+            let selectedItems = displayedItems.filter { selectedIDs.contains($0.id) }
+            return FerryDragDropService.shared.createLocalItemProvider(for: item, allSelectedItems: selectedItems)
         }
-        .onDrop(of: [.fileURL, UTType(FerryUTI.remoteItemIdentifier) ?? .item], isTargeted: Binding(
-            get: { targetedFolderID == item.id },
-            set: { if $0 { targetedFolderID = item.id } else if targetedFolderID == item.id { targetedFolderID = nil } }
-        )) { providers in
+        .onDrop(
+            of: [.fileURL, .url, FerryUTI.remoteItemType, FerryUTI.localItemType, UTType(FerryUTI.promisedFileIdentifier) ?? .data],
+            isTargeted: Binding(
+                get: { targetedFolderID == item.id },
+                set: { if $0 { targetedFolderID = item.id } else if targetedFolderID == item.id { targetedFolderID = nil } }
+            )
+        ) { providers in
             if item.isDirectory {
                 return handleDrop(providers: providers, targetDirectory: item.url)
             }
@@ -392,24 +401,36 @@ public struct LocalPaneView: View {
     }
 
     private func handleDrop(providers: [NSItemProvider], targetDirectory: URL) -> Bool {
-        for provider in providers {
-            if provider.hasItemConformingToTypeIdentifier(FerryUTI.remoteItemIdentifier) {
+        // 场景 1: 从远端面板拖入下载（远端 → 本地，支持单选与多选批量下载）
+        let remoteProviders = providers.filter { $0.hasItemConformingToTypeIdentifier(FerryUTI.remoteItemIdentifier) }
+        if !remoteProviders.isEmpty {
+            for provider in remoteProviders {
                 provider.loadDataRepresentation(forTypeIdentifier: FerryUTI.remoteItemIdentifier) { data, _ in
                     guard let data = data else { return }
-                    let bytes = Array(data)
-                    let remotePath = RemotePath(wireBytes: bytes, isAbsolute: true)
                     Task { @MainActor in
-                        if let item = ConnectionService.shared.remoteItems.first(where: { $0.path == remotePath }) {
-                            ConnectionService.shared.downloadItems([item], to: targetDirectory) {
-                                NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
-                            }
+                        let itemsToDownload = FerryDragDropService.shared.decodeRemoteItems(from: data)
+                        guard !itemsToDownload.isEmpty else { return }
+                        ConnectionService.shared.downloadItems(itemsToDownload, to: targetDirectory) {
+                            NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
                         }
                     }
                 }
-                return true
+            }
+            return true
+        }
+
+        // 场景 2: 从访达 (Finder) 或外部拖入本地目录（支持复制文件/文件夹以及 NSFilePromiseReceiver）
+        Task { @MainActor in
+            let urls = await FerryDragDropService.shared.resolveIncomingFiles(from: providers)
+            guard !urls.isEmpty else { return }
+            do {
+                try LocalFileSystemService.shared.copyItems(urls, into: targetDirectory)
+                loadDirectory()
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
-        return false
+        return true
     }
 
 

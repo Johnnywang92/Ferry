@@ -111,4 +111,22 @@ public final class LocalFileSystemService: Sendable {
             try FileManager.default.removeItem(at: url)
         }
     }
+
+    /// 将一组外部文件或目录复制到目标本地目录（若同名则按 macOS 习惯生成副本名）。
+    public func copyItems(_ urls: [URL], into destinationDirectory: URL) throws {
+        for src in urls {
+            var dest = destinationDirectory.appendingPathComponent(src.lastPathComponent)
+            if FileManager.default.fileExists(atPath: dest.path) {
+                let baseName = src.deletingPathExtension().lastPathComponent
+                let ext = src.pathExtension
+                var counter = 2
+                while FileManager.default.fileExists(atPath: dest.path) {
+                    let newName = ext.isEmpty ? "\(baseName) \(counter)" : "\(baseName) \(counter).\(ext)"
+                    dest = destinationDirectory.appendingPathComponent(newName)
+                    counter += 1
+                }
+            }
+            try FileManager.default.copyItem(at: src, to: dest)
+        }
+    }
 }

@@ -588,8 +588,12 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
 
     // MARK: - M3/M4: 传输队列与任务派发（含冲突策略拦截）
 
-    public func uploadFiles(_ localURLs: [URL], onComplete: (@MainActor () -> Void)? = nil) {
-        guard let remoteDir = currentRemotePath else { return }
+    public func uploadFiles(
+        _ localURLs: [URL],
+        toRemoteDirectory targetDir: RemotePath? = nil,
+        onComplete: (@MainActor () -> Void)? = nil
+    ) {
+        guard let remoteDir = targetDir ?? currentRemotePath else { return }
         guard !localURLs.isEmpty else { return }
         guard transferPreparation == nil else { return }
 
