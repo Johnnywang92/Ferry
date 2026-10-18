@@ -47,11 +47,48 @@ public final class ThemeManager {
     }
 
     private static let autoRetryKey = "dev.ferry.app.autoRetryFailures"
+    private static let uploadLimitKey = "dev.ferry.app.uploadLimitKB"
+    private static let downloadLimitKey = "dev.ferry.app.downloadLimitKB"
+    private static let maxConcurrencyKey = "dev.ferry.app.maxConcurrency"
 
     /// 遇到传输失败时是否默认勾选自动重试（UI-REFERENCE.md §6）。
     public var autoRetryFailures: Bool {
         didSet {
             UserDefaults.standard.set(autoRetryFailures, forKey: Self.autoRetryKey)
+        }
+    }
+
+    /// 上传限速（KB/s，0 表示无限制）
+    public var uploadLimitKB: Int {
+        didSet {
+            UserDefaults.standard.set(uploadLimitKB, forKey: Self.uploadLimitKey)
+            applyRateLimits()
+        }
+    }
+
+    /// 下载限速（KB/s，0 表示无限制）
+    public var downloadLimitKB: Int {
+        didSet {
+            UserDefaults.standard.set(downloadLimitKB, forKey: Self.downloadLimitKey)
+            applyRateLimits()
+        }
+    }
+
+    /// 队列并发传输任务数（1~10，默认 3）
+    public var maxConcurrency: Int {
+        didSet {
+            UserDefaults.standard.set(maxConcurrency, forKey: Self.maxConcurrencyKey)
+            applyRateLimits()
+        }
+    }
+
+    public func applyRateLimits() {
+        let up = uploadLimitKB > 0 ? Int64(uploadLimitKB) * 1024 : nil
+        let down = downloadLimitKB > 0 ? Int64(downloadLimitKB) * 1024 : nil
+        let concurrency = max(1, min(maxConcurrency, 10))
+        Task {
+            await ConnectionService.shared.transferQueue.setRateLimits(uploadBytesPerSecond: up, downloadBytesPerSecond: down)
+            await ConnectionService.shared.transferQueue.setMaxConcurrency(concurrency)
         }
     }
 
@@ -81,6 +118,12 @@ public final class ThemeManager {
         } else {
             self.autoRetryFailures = true
         }
+
+        self.uploadLimitKB = UserDefaults.standard.integer(forKey: Self.uploadLimitKey)
+        self.downloadLimitKB = UserDefaults.standard.integer(forKey: Self.downloadLimitKey)
+        let concurrency = UserDefaults.standard.integer(forKey: Self.maxConcurrencyKey)
+        self.maxConcurrency = concurrency > 0 ? concurrency : 3
+        applyRateLimits()
     }
 
     public func theme(for colorScheme: ColorScheme) -> FerryTheme {

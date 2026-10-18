@@ -15,6 +15,8 @@ public actor TransferQueue {
 
     public private(set) var maxConcurrency: Int
     public let rateLimiter: RateLimiter
+    public let uploadRateLimiter: RateLimiter
+    public let downloadRateLimiter: RateLimiter
     private let persistence: TransferQueuePersistence?
 
     private var records: [TransferTaskRecord] = []
@@ -31,12 +33,16 @@ public actor TransferQueue {
     public init(
         maxConcurrency: Int = defaultMaxConcurrency,
         bytesPerSecond: Int64? = nil,
+        uploadBytesPerSecond: Int64? = nil,
+        downloadBytesPerSecond: Int64? = nil,
         persistenceURL: URL? = nil,
         transferBackend: (any RemoteTransfer)? = nil,
         fileSystemBackend: (any RemoteFileSystem)? = nil
     ) {
         self.maxConcurrency = maxConcurrency
         self.rateLimiter = RateLimiter(bytesPerSecond: bytesPerSecond)
+        self.uploadRateLimiter = RateLimiter(bytesPerSecond: uploadBytesPerSecond ?? bytesPerSecond)
+        self.downloadRateLimiter = RateLimiter(bytesPerSecond: downloadBytesPerSecond ?? bytesPerSecond)
         self.transferBackend = transferBackend
         self.fileSystemBackend = fileSystemBackend
         if let url = persistenceURL {
@@ -44,6 +50,13 @@ public actor TransferQueue {
         } else {
             self.persistence = nil
         }
+    }
+
+    /// 动态更新上下行限速（字节/秒，nil 或 <=0 表示无限制）
+    public func setRateLimits(uploadBytesPerSecond: Int64?, downloadBytesPerSecond: Int64?) async {
+        await uploadRateLimiter.setBytesPerSecond(uploadBytesPerSecond)
+        await downloadRateLimiter.setBytesPerSecond(downloadBytesPerSecond)
+        await rateLimiter.setBytesPerSecond(uploadBytesPerSecond ?? downloadBytesPerSecond)
     }
 
     /// 设置活动后端连接。
@@ -141,7 +154,6 @@ public actor TransferQueue {
             records[index].updatedAt = Date()
             updateTaskState(for: records[index])
             active.cancel()
-            activeTasks.removeValue(forKey: id)
         } else if records[index].status == .pending {
             records[index].status = .paused
             records[index].updatedAt = Date()
@@ -276,7 +288,7 @@ public actor TransferQueue {
 
             let taskId = record.id
             let fs = self.fileSystemBackend
-            let limiter = self.rateLimiter
+            let limiter = (record.direction == .upload) ? self.uploadRateLimiter : self.downloadRateLimiter
 
             let worker = Task { [weak self, record] in
                 guard let self else { return }

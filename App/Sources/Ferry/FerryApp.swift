@@ -74,6 +74,17 @@ public struct FerryApp: App {
                     LanguageManager.shared.currentLanguage = .en
                 }
             }
+            CommandMenu(L10n.tr("传输", "Transfers")) {
+                Button(L10n.tr("服务器间直传…", "Server-to-Server Relay…")) {
+                    NotificationCenter.default.post(name: .ferryOpenServerRelay, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Button(L10n.tr("定时计划任务…", "Scheduled Tasks…")) {
+                    NotificationCenter.default.post(name: .ferryOpenScheduledTasks, object: nil)
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+            }
             CommandGroup(replacing: .help) {
                 Button(L10n.tr("Ferry 帮助与使用指南", "Ferry Help & User Guide")) {
                     NotificationCenter.default.post(name: .ferryOpenHelp, object: nil)
@@ -111,4 +122,7 @@ extension Notification.Name {
     public static let ferryOpenHelp = Notification.Name("ferryOpenHelp")
     public static let ferryOpenShortcuts = Notification.Name("ferryOpenShortcuts")
     public static let ferryExportDiagnosticReport = Notification.Name("ferryExportDiagnosticReport")
+    public static let ferryOpenServerRelay = Notification.Name("ferryOpenServerRelay")
+    public static let ferryOpenScheduledTasks = Notification.Name("ferryOpenScheduledTasks")
 }
+

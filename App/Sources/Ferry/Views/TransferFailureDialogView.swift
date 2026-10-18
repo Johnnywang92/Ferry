@@ -249,9 +249,17 @@ public struct TransferFailureDialogView: View {
                 .stroke(theme.line, lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.3), radius: 30, x: 0, y: 15)
-        .onAppear {
-            if autoRetryChecked && isCountdownActive {
-                startCountdown()
+        .task(id: isCountdownActive && autoRetryChecked) {
+            guard isCountdownActive && autoRetryChecked else { return }
+            while isCountdownActive && autoRetryChecked && countdownSeconds > 0 {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { break }
+                guard isCountdownActive && autoRetryChecked else { break }
+                countdownSeconds -= 1
+            }
+            if !Task.isCancelled && isCountdownActive && autoRetryChecked && countdownSeconds <= 0 {
+                isCountdownActive = false
+                onRetry()
             }
         }
     }
@@ -261,19 +269,5 @@ public struct TransferFailureDialogView: View {
             return L10n.format("重试 (%d秒)", "Retry (%ds)", countdownSeconds)
         }
         return L10n.tr("重试", "Retry")
-    }
-
-    private func startCountdown() {
-        Task { @MainActor in
-            while isCountdownActive && autoRetryChecked && countdownSeconds > 0 {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                guard isCountdownActive && autoRetryChecked else { break }
-                countdownSeconds -= 1
-            }
-            if isCountdownActive && autoRetryChecked && countdownSeconds <= 0 {
-                isCountdownActive = false
-                onRetry()
-            }
-        }
     }
 }

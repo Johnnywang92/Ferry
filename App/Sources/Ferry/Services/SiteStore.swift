@@ -13,6 +13,7 @@ public final class SiteStore {
     public static let shared = SiteStore()
 
     public private(set) var sites: [SiteBookmark] = []
+    public var bookmarks: [SiteBookmark] { sites }
     public var lastImportSummary: String?
 
     private let store: Store<[SiteBookmark]>

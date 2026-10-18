@@ -476,6 +476,15 @@ public struct RemotePaneView: View {
                 selectedIDs = [item.id]
                 onDownloadSelected()
             }
+            Button(L10n.tr("直传到其他服务器…", "Relay to Another Server…")) {
+                let items: [RemoteDisplayItem]
+                if selectedIDs.contains(item.id) && selectedIDs.count > 1 {
+                    items = connectionService.remoteItems.filter { selectedIDs.contains($0.id) }
+                } else {
+                    items = [item]
+                }
+                NotificationCenter.default.post(name: .ferryOpenServerRelay, object: items)
+            }
             if !item.isDirectory {
                 Button(L10n.tr("用外部编辑器打开", "Open with External Editor")) {
                     Task {

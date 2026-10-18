@@ -10,6 +10,8 @@ public struct ToolbarView: View {
     var onNewFolder: () -> Void
     var onRefresh: () -> Void
     var onSync: () -> Void
+    var onRelay: () -> Void
+    var onSchedules: () -> Void
     var onDisconnect: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
@@ -73,6 +75,13 @@ public struct ToolbarView: View {
                 toolbarButton(icon: "arrow.triangle.swap", label: L10n.tr("同步", "Sync"), action: onSync)
                     .disabled(!isConnected)
                     .help(L10n.tr("文件夹双向同步与差异计划 (DiffPlan)", "Two-way Folder Sync & DiffPlan"))
+
+                toolbarButton(icon: "arrow.left.arrow.right", label: L10n.tr("直传", "Relay"), action: onRelay)
+                    .disabled(!isConnected)
+                    .help(L10n.tr("服务器间流式直传 (Server-to-Server Relay)", "Server-to-Server Relay"))
+
+                toolbarButton(icon: "clock.arrow.2.circlepath", label: L10n.tr("计划", "Schedules"), action: onSchedules)
+                    .help(L10n.tr("定时同步与备份计划 (Scheduled Transfers)", "Scheduled Transfers"))
 
                 if isConnected {
                     toolbarButton(icon: "bolt.slash.circle", label: L10n.tr("断开连接", "Disconnect"), action: onDisconnect)

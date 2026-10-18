@@ -11,6 +11,9 @@ public struct MainWindowView: View {
     @State private var showingPreferences: Bool = false
     @State private var showingGoToFolder: Bool = false
     @State private var showingSyncSheet: Bool = false
+    @State private var showingServerRelaySheet: Bool = false
+    @State private var showingScheduledTasksSheet: Bool = false
+    @State private var itemsForRelay: [RemoteDisplayItem] = []
     @State private var showingNewFolderSheet: Bool = false
     @State private var showingHelpSheet: Bool = false
     @State private var initialHelpTab: HelpTab = .gettingStarted
@@ -51,6 +54,14 @@ public struct MainWindowView: View {
                 onRefresh: handleRefresh,
                 onSync: {
                     showingSyncSheet = true
+                },
+                onRelay: {
+                    let selected = connectionService.remoteItems.filter { selectedRemoteIDs.contains($0.id) }
+                    itemsForRelay = selected.isEmpty ? connectionService.remoteItems : selected
+                    showingServerRelaySheet = true
+                },
+                onSchedules: {
+                    showingScheduledTasksSheet = true
                 },
                 onDisconnect: handleDisconnect
             )
@@ -306,10 +317,33 @@ public struct MainWindowView: View {
         .sheet(isPresented: $showingHelpSheet) {
             HelpSheetView(initialTab: initialHelpTab, isPresented: $showingHelpSheet)
         }
+        // 服务器间直传 (Server-to-Server Relay) 弹窗
+        .sheet(isPresented: $showingServerRelaySheet) {
+            ServerRelayDialogView(
+                itemsToRelay: itemsForRelay.isEmpty ? connectionService.remoteItems : itemsForRelay,
+                isPresented: $showingServerRelaySheet
+            )
+        }
+        // 定时计划与自动传输任务弹窗
+        .sheet(isPresented: $showingScheduledTasksSheet) {
+            ScheduledTasksSheetView(isPresented: $showingScheduledTasksSheet)
+        }
 
         .onReceive(NotificationCenter.default.publisher(for: .ferryOpenNewConnection)) { _ in
             selectedBookmark = nil
             showingNewConnection = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryOpenServerRelay)) { notification in
+            if let items = notification.object as? [RemoteDisplayItem], !items.isEmpty {
+                itemsForRelay = items
+            } else {
+                let selected = connectionService.remoteItems.filter { selectedRemoteIDs.contains($0.id) }
+                itemsForRelay = selected.isEmpty ? connectionService.remoteItems : selected
+            }
+            showingServerRelaySheet = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ferryOpenScheduledTasks)) { _ in
+            showingScheduledTasksSheet = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .ferryOpenGoToFolder)) { _ in
             showingGoToFolder = true

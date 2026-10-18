@@ -60,8 +60,27 @@ public final class FerryDragDropService {
     private init() {
         let baseTemp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let dir = baseTemp.appendingPathComponent("Ferry/DragPromises", isDirectory: true)
+        // 启动时清理以往未清理的拖拽临时文件
+        try? FileManager.default.removeItem(at: dir)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         self.dragTempDirectory = dir
+
+        // 监听应用退出通知做清理
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.cleanupTemporaryFiles()
+            }
+        }
+    }
+
+    /// 清理拖拽 Promises 临时文件夹。
+    public func cleanupTemporaryFiles() {
+        try? FileManager.default.removeItem(at: dragTempDirectory)
+        try? FileManager.default.createDirectory(at: dragTempDirectory, withIntermediateDirectories: true)
     }
 
     // MARK: - 远端项目拖出（远端 → 本地 / 远端 → Finder）
@@ -139,6 +158,7 @@ public final class FerryDragDropService {
                             onProgress: nil
                         )
                         for file in scanned {
+                            try Task.checkCancellation()
                             let parent = file.localURL.deletingLastPathComponent()
                             try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
                             _ = try await TransferEngine.download(

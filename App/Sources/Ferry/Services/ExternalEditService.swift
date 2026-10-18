@@ -134,8 +134,28 @@ public final class ExternalEditService {
     private init() {
         let baseTemp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let editDir = baseTemp.appendingPathComponent("Ferry/ExternalEdits", isDirectory: true)
+        // 启动时清理以往未正常退出的孤立临时文件
+        try? FileManager.default.removeItem(at: editDir)
         try? FileManager.default.createDirectory(at: editDir, withIntermediateDirectories: true)
         self.rootTempDirectory = editDir
+
+        // 监听应用退出通知，做安全退出清理
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeAllSessions()
+                self?.cleanupAllTemporaryFiles()
+            }
+        }
+    }
+
+    /// 清理所有外部编辑临时工作区目录。
+    public func cleanupAllTemporaryFiles() {
+        try? FileManager.default.removeItem(at: rootTempDirectory)
+        try? FileManager.default.createDirectory(at: rootTempDirectory, withIntermediateDirectories: true)
     }
 
     /// 打开远端文件进入外部编辑（拉取 -> 存临时子目录 -> 系统 open -> FSEvents 监听）。

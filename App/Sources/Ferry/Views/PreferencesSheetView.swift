@@ -127,7 +127,79 @@ public struct PreferencesSheetView: View {
                     .background(theme.panel)
                     .cornerRadius(FerryRadius.r8)
 
-                    // 2. ~/.ssh/config 站点导入（M2 交付）
+                    // 2. 传输并发与带宽限速（v2.3 §342 & 进阶功能）
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(L10n.tr("传输并发与带宽限速（即时生效）", "Transfer Concurrency & Rate Limiting"))
+                            .font(FerryFont.subheadlineBold)
+                            .foregroundColor(theme.text)
+
+                        // 并发任务数
+                        HStack {
+                            Text(L10n.tr("并发槽位数", "Concurrency"))
+                                .font(FerryFont.captionMedium)
+                                .foregroundColor(theme.text2)
+                                .frame(width: 90, alignment: .leading)
+
+                            Stepper(value: Bindable(themeManager).maxConcurrency, in: 1...5) {
+                                Text(L10n.format("同时执行 %d 个文件传输任务", "%d concurrent file transfer tasks", themeManager.maxConcurrency))
+                                    .font(FerryFont.caption)
+                                    .foregroundColor(theme.text)
+                            }
+                        }
+
+                        // 下载限速
+                        HStack {
+                            Text(L10n.tr("下载速度上限", "Download Limit"))
+                                .font(FerryFont.captionMedium)
+                                .foregroundColor(theme.text2)
+                                .frame(width: 90, alignment: .leading)
+
+                            Picker("", selection: Bindable(themeManager).downloadLimitKB) {
+                                Text(L10n.tr("无限制", "Unlimited")).tag(0)
+                                Text("500 KB/s").tag(500)
+                                Text("1.0 MB/s").tag(1024)
+                                Text("2.0 MB/s").tag(2048)
+                                Text("5.0 MB/s").tag(5120)
+                                Text("10.0 MB/s").tag(10240)
+                            }
+                            .frame(maxWidth: 240)
+
+                            if themeManager.downloadLimitKB > 0 {
+                                Text(L10n.format("当前限制：%@/s", "Current: %@/s", ByteCountFormatter.string(fromByteCount: Int64(themeManager.downloadLimitKB) * 1024, countStyle: .file)))
+                                    .font(FerryFont.caption)
+                                    .foregroundColor(theme.accentColor)
+                            }
+                        }
+
+                        // 上传限速
+                        HStack {
+                            Text(L10n.tr("上传速度上限", "Upload Limit"))
+                                .font(FerryFont.captionMedium)
+                                .foregroundColor(theme.text2)
+                                .frame(width: 90, alignment: .leading)
+
+                            Picker("", selection: Bindable(themeManager).uploadLimitKB) {
+                                Text(L10n.tr("无限制", "Unlimited")).tag(0)
+                                Text("250 KB/s").tag(250)
+                                Text("500 KB/s").tag(500)
+                                Text("1.0 MB/s").tag(1024)
+                                Text("2.0 MB/s").tag(2048)
+                                Text("5.0 MB/s").tag(5120)
+                            }
+                            .frame(maxWidth: 240)
+
+                            if themeManager.uploadLimitKB > 0 {
+                                Text(L10n.format("当前限制：%@/s", "Current: %@/s", ByteCountFormatter.string(fromByteCount: Int64(themeManager.uploadLimitKB) * 1024, countStyle: .file)))
+                                    .font(FerryFont.caption)
+                                    .foregroundColor(theme.accentColor)
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .background(theme.panel)
+                    .cornerRadius(FerryRadius.r8)
+
+                    // 3. ~/.ssh/config 站点导入（M2 交付）
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             Text(L10n.tr("从 ~/.ssh/config 导入站点", "Import Sites from ~/.ssh/config"))
