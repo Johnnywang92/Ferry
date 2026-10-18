@@ -9,6 +9,7 @@ public struct RemotePaneView: View {
     var searchText: String
     var onDownloadSelected: () -> Void
     var onNewRemoteFolder: () -> Void
+    var onRenameRemote: (RemoteDisplayItem) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     private var connectionService: ConnectionService { ConnectionService.shared }
@@ -398,6 +399,9 @@ public struct RemotePaneView: View {
                 }
             }
             Divider()
+            Button("重命名…") {
+                onRenameRemote(item)
+            }
             Button("复制远程路径") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(item.path.description, forType: .string)

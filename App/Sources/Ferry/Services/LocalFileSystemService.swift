@@ -78,4 +78,29 @@ public final class LocalFileSystemService: Sendable {
         }
         return isDir.boolValue ? targetURL : targetURL.deletingLastPathComponent()
     }
+
+    public func renameItem(at sourceURL: URL, to newName: String) throws -> URL {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw NSError(domain: "dev.ferry.app", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "名称不能为空"
+            ])
+        }
+        guard !trimmed.contains("/") else {
+            throw NSError(domain: "dev.ferry.app", code: 4, userInfo: [
+                NSLocalizedDescriptionKey: "名称不能包含 '/'"
+            ])
+        }
+        if trimmed == sourceURL.lastPathComponent {
+            return sourceURL
+        }
+        let targetURL = sourceURL.deletingLastPathComponent().appendingPathComponent(trimmed)
+        if FileManager.default.fileExists(atPath: targetURL.path) {
+            throw NSError(domain: "dev.ferry.app", code: 5, userInfo: [
+                NSLocalizedDescriptionKey: "目标名称已存在：\(trimmed)"
+            ])
+        }
+        try FileManager.default.moveItem(at: sourceURL, to: targetURL)
+        return targetURL
+    }
 }

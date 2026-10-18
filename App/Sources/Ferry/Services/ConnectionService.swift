@@ -464,6 +464,46 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
         }
     }
 
+    public func renameRemoteItem(_ item: RemoteDisplayItem, to newName: String) async -> (success: Bool, error: String?) {
+        guard let connection = activeConnection else {
+            return (false, "未连接到远程服务器")
+        }
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return (false, "名称不能为空")
+        }
+        guard !trimmed.contains("/") else {
+            return (false, "名称不能包含 '/'")
+        }
+        if trimmed == item.name {
+            return (true, nil)
+        }
+
+        let converter = CharsetConverter(charset: currentCharset)
+        let nameBytes: [UInt8]
+        if case .bytes(let encoded) = converter.encode(trimmed) {
+            nameBytes = encoded
+        } else {
+            nameBytes = Array(trimmed.utf8)
+        }
+
+        guard let parent = try? PathResolver.parent(of: item.path),
+              let target = try? PathResolver.child(of: parent, name: nameBytes) else {
+            return (false, "无法解析目标路径")
+        }
+
+        do {
+            try await connection.rename(item.path, to: target, overwrite: false)
+            await refreshRemote()
+            return (true, nil)
+        } catch let remoteError as RemoteError {
+            let readable = Self.readableMessage(for: remoteError)
+            return (false, readable)
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
     private func loadRemoteItems(from path: RemotePath, on connection: any RemoteFileSystem) async throws {
         var listing = try await connection.list(path)
         var resolutions: [RemotePath: RemoteDirectoryListing.LinkResolution] = [:]

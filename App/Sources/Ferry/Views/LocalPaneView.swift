@@ -9,6 +9,7 @@ public struct LocalPaneView: View {
     var searchText: String
     var onUploadSelected: () -> Void
     var onNewLocalFolder: () -> Void
+    var onRenameLocal: (LocalItem) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     private var themeManager: ThemeManager { ThemeManager.shared }
@@ -324,6 +325,9 @@ public struct LocalPaneView: View {
                 }
             }
             Divider()
+            Button("重命名…") {
+                onRenameLocal(item)
+            }
             Button("在访达中显示") {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
             }

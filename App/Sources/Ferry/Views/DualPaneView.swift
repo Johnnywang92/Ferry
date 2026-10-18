@@ -10,6 +10,8 @@ public struct DualPaneView: View {
     var onDownloadSelected: () -> Void
     var onNewLocalFolder: () -> Void
     var onNewRemoteFolder: () -> Void
+    var onRenameLocal: (LocalItem) -> Void
+    var onRenameRemote: (RemoteDisplayItem) -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     private var theme: FerryTheme {
@@ -25,7 +27,8 @@ public struct DualPaneView: View {
                     selectedIDs: $selectedLocalIDs,
                     searchText: searchText,
                     onUploadSelected: onUploadSelected,
-                    onNewLocalFolder: onNewLocalFolder
+                    onNewLocalFolder: onNewLocalFolder,
+                    onRenameLocal: onRenameLocal
                 )
                 .frame(width: (geometry.size.width - 1) / 2)
 
@@ -40,7 +43,8 @@ public struct DualPaneView: View {
                     showingNewConnection: $showingNewConnection,
                     searchText: searchText,
                     onDownloadSelected: onDownloadSelected,
-                    onNewRemoteFolder: onNewRemoteFolder
+                    onNewRemoteFolder: onNewRemoteFolder,
+                    onRenameRemote: onRenameRemote
                 )
                 .frame(width: (geometry.size.width - 1) / 2)
             }

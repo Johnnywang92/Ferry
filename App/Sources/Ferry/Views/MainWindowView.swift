@@ -13,6 +13,7 @@ public struct MainWindowView: View {
     @State private var showingSyncSheet: Bool = false
     @State private var showingNewFolderSheet: Bool = false
     @State private var newFolderTargetIsRemote: Bool = false
+    @State private var itemToRename: RenameTarget? = nil
     @State private var searchText: String = ""
 
     // 本地路径与选择
@@ -111,6 +112,12 @@ public struct MainWindowView: View {
                     onNewRemoteFolder: {
                         newFolderTargetIsRemote = true
                         showingNewFolderSheet = true
+                    },
+                    onRenameLocal: { item in
+                        itemToRename = .local(item: item)
+                    },
+                    onRenameRemote: { item in
+                        itemToRename = .remote(item: item)
                     }
                 )
             }
@@ -185,6 +192,22 @@ public struct MainWindowView: View {
                     Task {
                         await connectionService.createRemoteFolder(named: name)
                     }
+                }
+            )
+        }
+        // 重命名文件/文件夹弹窗
+        .sheet(item: $itemToRename) { target in
+            RenameDialog(
+                target: target,
+                onDismiss: {
+                    itemToRename = nil
+                },
+                onConfirmLocal: { localItem, newName in
+                    _ = try LocalFileSystemService.shared.renameItem(at: localItem.url, to: newName)
+                    NotificationCenter.default.post(name: .ferryRefreshLocalPane, object: nil)
+                },
+                onConfirmRemote: { remoteItem, newName in
+                    await connectionService.renameRemoteItem(remoteItem, to: newName)
                 }
             )
         }
