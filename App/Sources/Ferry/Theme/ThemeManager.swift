@@ -46,6 +46,15 @@ public final class ThemeManager {
         }
     }
 
+    private static let autoRetryKey = "dev.ferry.app.autoRetryFailures"
+
+    /// 遇到传输失败时是否默认勾选自动重试（UI-REFERENCE.md §6）。
+    public var autoRetryFailures: Bool {
+        didSet {
+            UserDefaults.standard.set(autoRetryFailures, forKey: Self.autoRetryKey)
+        }
+    }
+
     public init() {
         if let rawAppearance = UserDefaults.standard.string(forKey: Self.appearanceKey),
            let mode = FerryAppearanceMode(rawValue: rawAppearance) {
@@ -65,6 +74,12 @@ public final class ThemeManager {
             self.showHiddenFiles = UserDefaults.standard.bool(forKey: Self.showHiddenKey)
         } else {
             self.showHiddenFiles = true
+        }
+
+        if UserDefaults.standard.object(forKey: Self.autoRetryKey) != nil {
+            self.autoRetryFailures = UserDefaults.standard.bool(forKey: Self.autoRetryKey)
+        } else {
+            self.autoRetryFailures = true
         }
     }
 

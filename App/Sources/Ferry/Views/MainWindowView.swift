@@ -272,6 +272,24 @@ public struct MainWindowView: View {
                 )
             }
         }
+        // M4/UI-REFERENCE §6: 传输失败独立弹窗与倒计时重试
+        .sheet(item: Binding(
+            get: { connectionService.pendingFailureContext },
+            set: { connectionService.pendingFailureContext = $0 }
+        )) { context in
+            TransferFailureDialogView(
+                context: context,
+                onRetry: {
+                    connectionService.retryFailureTask(taskID: context.taskID)
+                },
+                onSkip: {
+                    connectionService.skipFailureTask(taskID: context.taskID)
+                },
+                onCancelAll: {
+                    connectionService.cancelAllTransfersFromFailure()
+                }
+            )
+        }
         // M5: 文件夹双向同步与 DiffPlan 弹窗（v2.3 §384-434, U4）
         .sheet(isPresented: $showingSyncSheet) {
             if let remotePath = connectionService.currentRemotePath,

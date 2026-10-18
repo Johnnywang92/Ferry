@@ -330,13 +330,23 @@ public struct TransferQueuePanelView: View {
 
         case .failed(let message, _):
             HStack(spacing: 4) {
-                Text(L10n.format("失败 · %@", "Failed · %@", message))
-                    .font(FerryFont.caption)
-                    .foregroundColor(theme.errorRed)
-                    .lineLimit(1)
+                Button(action: {
+                    connectionService.presentFailureDialog(for: task)
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 10))
+                        Text(L10n.format("失败 · %@", "Failed · %@", message))
+                            .lineLimit(1)
+                    }
+                }
+                .font(FerryFont.caption)
+                .foregroundColor(theme.errorRed)
+                .buttonStyle(.plain)
+                .help(L10n.tr("点击查看详细失败原因与重试", "Click to view failure details and retry"))
 
                 Button(L10n.tr("重试", "Retry")) {
-                    connectionService.retryQueueTask(id: task.id)
+                    connectionService.presentFailureDialog(for: task)
                 }
                 .font(FerryFont.captionBold)
                 .foregroundColor(theme.accentColor)

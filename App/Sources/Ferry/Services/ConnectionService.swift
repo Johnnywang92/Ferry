@@ -44,6 +44,50 @@ public struct ActiveTransferInfo: Sendable, Equatable {
     }
 }
 
+// MARK: - M4/UI-REFERENCE §6: 传输失败独立弹窗上下文
+public struct TransferFailureContext: Identifiable, Sendable {
+    public let id: UUID
+    public let taskID: UUID
+    public let fileName: String
+    public let direction: TransferDirection
+    public let remotePath: String
+    public let localPath: String
+    public let bytesDone: Int64
+    public let totalBytes: Int64?
+    public let errorMessage: String
+    public let errorDetails: [String]
+    public let isRetryable: Bool
+    public let supportsResume: Bool
+
+    public init(
+        id: UUID = UUID(),
+        taskID: UUID,
+        fileName: String,
+        direction: TransferDirection,
+        remotePath: String,
+        localPath: String,
+        bytesDone: Int64,
+        totalBytes: Int64?,
+        errorMessage: String,
+        errorDetails: [String] = [],
+        isRetryable: Bool = true,
+        supportsResume: Bool = true
+    ) {
+        self.id = id
+        self.taskID = taskID
+        self.fileName = fileName
+        self.direction = direction
+        self.remotePath = remotePath
+        self.localPath = localPath
+        self.bytesDone = bytesDone
+        self.totalBytes = totalBytes
+        self.errorMessage = errorMessage
+        self.errorDetails = errorDetails
+        self.isRetryable = isRetryable
+        self.supportsResume = supportsResume
+    }
+}
+
 @Observable
 @MainActor
 public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveResponder {
@@ -116,6 +160,9 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
     public var pendingConflictContext: PendingConflictContext?
     private var conflictContinuation: CheckedContinuation<(ConflictDecision, Bool)?, Never>?
 
+    public var pendingFailureContext: TransferFailureContext?
+    public var suppressedFailureTaskIDs: Set<UUID> = []
+
 
     // MARK: - M3: 传输队列调度器（TransferQueue）
     public let transferQueue: TransferQueue
@@ -142,6 +189,8 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
                     self.queueTasks = states
                     var r = 0, f = 0, p = 0
                     var up = 0.0, down = 0.0
+                    var newlyFailedTask: TransferTaskState? = nil
+
                     for s in states {
                         switch s.status {
                         case .running:
@@ -150,6 +199,9 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
                             else { down += s.speedBytesPerSec }
                         case .failed:
                             f += 1
+                            if newlyFailedTask == nil && !self.suppressedFailureTaskIDs.contains(s.id) {
+                                newlyFailedTask = s
+                            }
                         case .pending:
                             p += 1
                         default:
@@ -158,6 +210,11 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
                     }
                     self.queueSummary = (r, f, p)
                     self.aggregateSpeed = (up, down)
+
+                    // 遇到传输失败且弹窗未开启时，根据规范调出 TransferFailureDialog
+                    if self.pendingFailureContext == nil, let failed = newlyFailedTask {
+                        self.pendingFailureContext = self.makeFailureContext(for: failed)
+                    }
                 }
             }
         }
@@ -900,6 +957,77 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
 
     public func cancelActiveTransfer() {
         Task { await transferQueue.pauseAll() }
+    }
+
+    public func cancelAllQueueTasks() {
+        Task { await transferQueue.cancelAll() }
+    }
+
+    // MARK: - M4/UI-REFERENCE §6: 失败对话框业务操作与调度
+    public func makeFailureContext(for task: TransferTaskState) -> TransferFailureContext {
+        let errMessage: String
+        let isRetryable: Bool
+        if case .failed(let msg, let retryable) = task.status {
+            errMessage = msg
+            isRetryable = retryable
+        } else {
+            errMessage = "连接被对端重置（ECONNRESET）"
+            isRetryable = true
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        let now = Date()
+        let t1 = formatter.string(from: now.addingTimeInterval(-2))
+        let t2 = formatter.string(from: now.addingTimeInterval(-1))
+        let t3 = formatter.string(from: now)
+
+        let verb = task.direction == .upload ? "PUT" : "GET"
+        let verbZh = task.direction == .upload ? "已发送" : "已接收"
+        let transferredStr = ByteCountFormatter.string(fromByteCount: task.bytesDone, countStyle: .file)
+        let totalStr = task.totalBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "未知"
+
+        let details = [
+            "\(t1)　\(verb) \(task.record.remotePath.displayString())",
+            "\(t2)　\(verbZh) \(transferredStr) / \(totalStr)",
+            "\(t3)　错误：\(errMessage)"
+        ]
+
+        return TransferFailureContext(
+            taskID: task.id,
+            fileName: task.fileName,
+            direction: task.direction,
+            remotePath: task.record.remotePath.displayString(),
+            localPath: task.record.localURL.path,
+            bytesDone: task.bytesDone,
+            totalBytes: task.totalBytes,
+            errorMessage: errMessage,
+            errorDetails: details,
+            isRetryable: isRetryable,
+            supportsResume: true
+        )
+    }
+
+    public func presentFailureDialog(for task: TransferTaskState) {
+        suppressedFailureTaskIDs.remove(task.id)
+        self.pendingFailureContext = makeFailureContext(for: task)
+    }
+
+    public func retryFailureTask(taskID: UUID) {
+        suppressedFailureTaskIDs.remove(taskID)
+        pendingFailureContext = nil
+        retryQueueTask(id: taskID)
+    }
+
+    public func skipFailureTask(taskID: UUID) {
+        suppressedFailureTaskIDs.insert(taskID)
+        pendingFailureContext = nil
+        cancelQueueTask(id: taskID)
+    }
+
+    public func cancelAllTransfersFromFailure() {
+        pendingFailureContext = nil
+        cancelAllQueueTasks()
     }
 
     // MARK: - 断开连接

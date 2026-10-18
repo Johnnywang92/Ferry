@@ -205,6 +205,13 @@ public actor TransferQueue {
         }
     }
 
+    /// 取消全部未完成任务（清理 .part 并停止全部调度）。
+    public func cancelAll() {
+        for record in records where !record.status.isTerminal {
+            cancelTask(id: record.id)
+        }
+    }
+
     /// 恢复全部暂停或可重试的任务。
     public func resumeAll() {
         for record in records where record.status.isPaused {
