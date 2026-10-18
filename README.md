@@ -12,6 +12,7 @@
   <img src="https://img.shields.io/badge/Platform-macOS%2015%2B%20(Apple%20Silicon)-blue" alt="macOS 15+" />
   <img src="https://img.shields.io/badge/Language-Swift%206%20(Strict%20Concurrency)-orange" alt="Swift 6" />
   <img src="https://img.shields.io/badge/Version-1.0.0--beta.1-green" alt="Version 1.0.0-beta.1" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT" /></a>
   <img src="https://img.shields.io/badge/Status-Beta%20Ready-success" alt="Beta Ready" />
 </p>
 
@@ -39,13 +40,20 @@ Ferry 是一款遵循 Apple 现代化设计哲学的高性能文件传输工具�
 - **AppKit + SwiftUI 双栈融合**：
   - 中央双栏文件树采用高性能 AppKit 原生渲染，支持完整拖拽矩阵（外部文件拖入/双栏互拖/拖出回写）、空格键 Quick Look 极速预览、文件就地重命名与外部编辑器监视实时回传保存；
   - 窗口框架、工具栏、队列面板与弹窗全面采用 SwiftUI 现代响应式设计，适配深浅双色与可配置 4 档强调色；
-- **精准字符集与路径词法**：
-  - 寻址永远遵从底层 `wireBytes`，文件名解码支持 UTF-8、GBK、GB18030 与 Big5 切换，对非规范字节提供十六进制视图降级，绝不出现截断或乱码覆写；
+- **全功能文件与目录管理**：
+  - 快捷新建文件夹，支持本地与远程文件/目录右键菜单及回车键就地重命名；
+  - 内置安全删除防护与二次确认对话框，严防重要文件误删；
+- **侧边栏与快捷导航体验**：
+  - **侧边栏本地快捷位置**：支持用户自定义增加本地快捷目录，支持就地重命名、变更绑定路径、移除项目以及一键恢复系统默认推荐位置；
+  - **路径栏双向同步与输入导航**：双栏顶部路径栏支持实时输入与焦点管理，支持失焦自动提交跳转，并在导航失败时提供即时容错提示；
   - 支持 `⌘⇧G` 快速前往路径与 `⌘⇧.` 隐藏文件实时切换；
   - 顶部即时搜索框实现双栏列表毫秒级过滤（零额外网络往返）。
+- **精准字符集与路径词法**：
+  - 寻址永远遵从底层 `wireBytes`，文件名解码支持 UTF-8、GBK、GB18030 与 Big5 切换，对非规范字节提供十六进制视图降级，绝不出现截断或乱码覆写。
 
 ### 3. 弹性传输引擎 (TransferQueue)
 - **调度与并发控制**：默认 N=3 任务并发，单任务异常隔离，支持平滑令牌桶限速；
+- **前置防护与即时反馈**：启动传输具备即时准备状态反馈与防重复点击（防抖）保护；
 - **暂停与取消语义严格解耦**：
   - **暂停**：保留本地 `.part` 临时文件与已传输字节偏移，支持断点续传；
   - **取消**：200ms 内立即打断阻塞传输，自动清理目标端临时残片并转置状态；
@@ -118,6 +126,12 @@ swift test --package-path Packages/Backends
 
 ---
 
-## 📄 开源许可证
+## 📄 开源许可证与著作权
+ 
+本项目采用 [MIT 许可证](LICENSE) 开源。
 
-本项目遵循 MIT 协议开源。
+```text
+Copyright (c) 2026 Johnny Boy Studio. All rights reserved.
+```
+
+您可以自由使用、修改和分发本项目代码，但须在任何实质性副本中保留上述著作权声明与许可条款。完整许可内容请参阅项目根目录下的 [LICENSE](LICENSE) 文件。
