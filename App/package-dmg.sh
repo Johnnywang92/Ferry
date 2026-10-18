@@ -30,17 +30,43 @@ ZIP_SIZE=$(stat -f%z "$ZIP_PATH")
 ZIP_SHA256=$(shasum -a 256 "$ZIP_PATH" | awk '{print $1}')
 echo "  ZIP 产物：$ZIP_PATH ($ZIP_SIZE 字节, SHA-256: $ZIP_SHA256)"
 
-echo "== 4. 创建 DMG 镜像"
+echo "== 4. 创建 DMG 镜像（配置挂载自动弹窗与拖拽安装布局）"
 STAGING_DIR="$BUILD_DIR/dmg-staging"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
 cp -R "$APP" "$STAGING_DIR/"
-ln -s /Applications "$STAGING_DIR/Applications"
 
-hdiutil create -volname "Ferry" \
-    -srcfolder "$STAGING_DIR" \
-    -ov -format UDZO \
-    "$DMG_PATH" >/dev/null
+if command -v create-dmg >/dev/null 2>&1; then
+    rm -f "$DMG_PATH"
+    set +e
+    create-dmg \
+        --volname "Ferry" \
+        --window-pos 260 160 \
+        --window-size 540 380 \
+        --icon-size 96 \
+        --icon "Ferry.app" 140 180 \
+        --app-drop-link 400 180 \
+        --hide-extension "Ferry.app" \
+        --no-internet-enable \
+        "$DMG_PATH" \
+        "$STAGING_DIR/"
+    CREATE_DMG_RC=$?
+    set -e
+    if [[ $CREATE_DMG_RC -ne 0 && ! -f "$DMG_PATH" ]]; then
+        echo "  create-dmg 退出码 $CREATE_DMG_RC，回退到基础 hdiutil"
+        ln -s /Applications "$STAGING_DIR/Applications"
+        hdiutil create -volname "Ferry" \
+            -srcfolder "$STAGING_DIR" \
+            -ov -format UDZO \
+            "$DMG_PATH" >/dev/null
+    fi
+else
+    ln -s /Applications "$STAGING_DIR/Applications"
+    hdiutil create -volname "Ferry" \
+        -srcfolder "$STAGING_DIR" \
+        -ov -format UDZO \
+        "$DMG_PATH" >/dev/null
+fi
 
 rm -rf "$STAGING_DIR"
 DMG_SIZE=$(stat -f%z "$DMG_PATH")
