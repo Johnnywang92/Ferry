@@ -7,6 +7,14 @@ public struct GoToFolderDialog: View {
         case remote = "远程目录"
 
         public var id: String { rawValue }
+
+        @MainActor
+        public var displayName: String {
+            switch self {
+            case .local: return L10n.tr("本地目录", "Local Directory")
+            case .remote: return L10n.tr("远程目录", "Remote Directory")
+            }
+        }
     }
 
     @Binding var isPresented: Bool
@@ -52,16 +60,16 @@ public struct GoToFolderDialog: View {
                 Image(systemName: "folder.badge.gearshape")
                     .font(.system(size: 18))
                     .foregroundColor(theme.accentColor)
-                Text("前往文件夹 (⌘⇧G)")
+                Text(L10n.tr("前往文件夹 (⌘⇧G)", "Go to Folder (⌘⇧G)"))
                     .font(FerryFont.bodyBold)
                     .foregroundColor(theme.text)
                 Spacer()
             }
 
             if isRemoteConnected {
-                Picker("目标面板", selection: $targetPane) {
+                Picker(L10n.tr("目标面板", "Target Pane"), selection: $targetPane) {
                     ForEach(TargetPane.allCases) { pane in
-                        Text(pane.rawValue).tag(pane)
+                        Text(pane.displayName).tag(pane)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -72,11 +80,13 @@ public struct GoToFolderDialog: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text(targetPane == .remote ? "输入远程路径（支持 ~、相对路径与绝对路径）：" : "输入本地路径（支持 ~ 展开与相对路径）：")
+                Text(targetPane == .remote
+                    ? L10n.tr("输入远程路径（支持 ~、相对路径与绝对路径）：", "Enter remote path (supports ~, relative and absolute):")
+                    : L10n.tr("输入本地路径（支持 ~ 展开与相对路径）：", "Enter local path (supports ~ expansion and relative):"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
-                TextField(targetPane == .remote ? "/var/www/html 或 ~/spike" : "~/Projects", text: $pathInput)
+                TextField(targetPane == .remote ? "/var/www/html, ~/spike" : "~/Projects", text: $pathInput)
                     .textFieldStyle(.roundedBorder)
                     .font(FerryFont.monoBody)
                     .onSubmit {
@@ -96,12 +106,12 @@ public struct GoToFolderDialog: View {
 
             HStack {
                 Spacer()
-                Button("取消") {
+                Button(L10n.tr("取消", "Cancel")) {
                     isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button(isNavigating ? "前往中..." : "前往") {
+                Button(isNavigating ? L10n.tr("前往中...", "Going...") : L10n.tr("前往", "Go")) {
                     submit()
                 }
                 .keyboardShortcut(.defaultAction)

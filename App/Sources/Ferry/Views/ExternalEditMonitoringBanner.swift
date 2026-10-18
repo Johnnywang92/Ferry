@@ -21,7 +21,7 @@ public struct ExternalEditMonitoringBanner: View {
                         .fill(statusColor(for: session.status))
                         .frame(width: 8, height: 8)
 
-                    Text("外部编辑：\(session.remoteItem.name)")
+                    Text(L10n.format("外部编辑：%@", "External edit: %@", session.remoteItem.name))
                         .font(FerryFont.subheadlineBold)
                         .foregroundColor(theme.text)
 
@@ -37,7 +37,7 @@ public struct ExternalEditMonitoringBanner: View {
                     get: { session.isAutoUploadEnabled },
                     set: { session.isAutoUploadEnabled = $0 }
                 )) {
-                    Text("自动回传")
+                    Text(L10n.tr("自动回传", "Auto Upload"))
                         .font(FerryFont.captionMedium)
                         .foregroundColor(theme.text)
                 }
@@ -52,7 +52,7 @@ public struct ExternalEditMonitoringBanner: View {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 11))
-                        Text("立即上传")
+                        Text(L10n.tr("立即上传", "Upload Now"))
                             .font(FerryFont.captionBold)
                     }
                     .padding(.horizontal, 8)
@@ -73,7 +73,7 @@ public struct ExternalEditMonitoringBanner: View {
                         .foregroundColor(theme.text3)
                 }
                 .buttonStyle(.plain)
-                .help("完成编辑并关闭监视")
+                .help(L10n.tr("完成编辑并关闭监视", "Finish editing and stop monitoring"))
             }
             .padding(.horizontal, 16)
             .frame(height: 32)
@@ -86,27 +86,27 @@ public struct ExternalEditMonitoringBanner: View {
             )
             // 远端 mtime 冲突提示
             .alert(
-                "远端文件在编辑期间已被更改",
+                L10n.tr("远端文件在编辑期间已被更改", "Remote file has been modified during editing"),
                 isPresented: Binding(
                     get: { service.conflictPromptSession != nil },
                     set: { if !$0 { service.conflictPromptSession = nil } }
                 )
             ) {
-                Button("仍要覆盖远端", role: .destructive) {
+                Button(L10n.tr("仍要覆盖远端", "Overwrite Remote Anyway"), role: .destructive) {
                     if let s = service.conflictPromptSession {
                         Task {
                             await service.uploadChanges(for: s, forceOverwrite: true)
                         }
                     }
                 }
-                Button("取消上传", role: .cancel) {
+                Button(L10n.tr("取消上传", "Cancel Upload"), role: .cancel) {
                     service.conflictPromptSession = nil
                 }
             } message: {
                 if let d = service.conflictRemoteDate {
-                    Text("服务器上的同名文件修改时间为 \(formattedConflictDate(d))，比您开始编辑时更新。覆盖将替换服务器上的最新内容。")
+                    Text(L10n.format("服务器上的同名文件修改时间为 %@，比您开始编辑时更新。覆盖将替换服务器上的最新内容。", "Remote file modified at %@, newer than your editing session. Overwrite will replace server content.", formattedConflictDate(d)))
                 } else {
-                    Text("服务器上的同名文件已被其他人或外部进程修改。覆盖将替换服务器上的最新内容。")
+                    Text(L10n.tr("服务器上的同名文件已被其他人或外部进程修改。覆盖将替换服务器上的最新内容。", "Remote file has been modified by another process. Overwrite will replace server content."))
                 }
             }
         }

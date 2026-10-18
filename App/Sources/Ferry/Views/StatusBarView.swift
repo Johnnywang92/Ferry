@@ -31,9 +31,9 @@ public struct StatusBarView: View {
             // 左：本地选择状态
             HStack(spacing: 4) {
                 if localSelectedCount > 0 {
-                    Text("本地 已选 \(localSelectedCount) 项 · 共 \(localTotalCount) 项")
+                    Text(L10n.format("本地 已选 %d 项 · 共 %d 项", "Local: %d selected · %d total", localSelectedCount, localTotalCount))
                 } else {
-                    Text("本地 共 \(localTotalCount) 项")
+                    Text(L10n.format("本地 共 %d 项", "Local: %d items", localTotalCount))
                 }
             }
             .font(FerryFont.caption)
@@ -65,12 +65,12 @@ public struct StatusBarView: View {
                     } else if summary.running > 0 {
                         HStack(spacing: 4) {
                             ProgressView().controlSize(.mini)
-                            Text("\(summary.running) 项进行中")
+                            Text(L10n.format("%d 项进行中", "%d running", summary.running))
                                 .font(FerryFont.caption)
                                 .foregroundColor(theme.text2)
                         }
                     } else if summary.failed > 0 {
-                        Text("\(summary.failed) 项失败")
+                        Text(L10n.format("%d 项失败", "%d failed", summary.failed))
                             .font(FerryFont.caption)
                             .foregroundColor(theme.errorRed)
                     }
@@ -78,7 +78,7 @@ public struct StatusBarView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("点击展开/收起传输队列")
+            .help(L10n.tr("点击展开/收起传输队列", "Click to toggle transfer queue"))
 
             Spacer()
 
@@ -87,14 +87,14 @@ public struct StatusBarView: View {
                 switch connectionService.state {
                 case .connected:
                     if remoteSelectedCount > 0 {
-                        Text("远程 已选 \(remoteSelectedCount) 项 · 共 \(remoteTotalCount) 项")
+                        Text(L10n.format("远程 已选 %d 项 · 共 %d 项", "Remote: %d selected · %d total", remoteSelectedCount, remoteTotalCount))
                     } else {
-                        Text("远程 共 \(remoteTotalCount) 项")
+                        Text(L10n.format("远程 共 %d 项", "Remote: %d items", remoteTotalCount))
                     }
                     Text("·")
                     Image(systemName: "lock.fill")
                         .font(.system(size: 9))
-                    Text("加密连接")
+                    Text(L10n.tr("加密连接", "Encrypted"))
                     Text("·")
                     Menu {
                         ForEach(CharsetConverter.Charset.allCases) { cs in
@@ -116,15 +116,15 @@ public struct StatusBarView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .help("切换远端文件名解码字符集（零网络往返实时重解码）")
+                    .help(L10n.tr("切换远端文件名解码字符集（零网络往返实时重解码）", "Switch character encoding for remote filenames"))
                 case .connecting:
-                    Text("连接握手中…")
+                    Text(L10n.tr("连接握手中…", "Connecting…"))
                 case .failed(let err):
-                    Text("错误：\(err)")
+                    Text(L10n.format("错误：%@", "Error: %@", err))
                         .foregroundColor(theme.errorRed)
                         .lineLimit(1)
                 case .disconnected:
-                    Text("远程未连接")
+                    Text(L10n.tr("远程未连接", "Remote Disconnected"))
                         .foregroundColor(theme.text3)
                 }
             }

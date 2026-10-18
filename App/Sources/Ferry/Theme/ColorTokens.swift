@@ -22,12 +22,13 @@ public enum FerryAccentOption: String, CaseIterable, Identifiable, Sendable {
         Color(hex: hex)
     }
 
+    @MainActor
     public var label: String {
         switch self {
-        case .teal: return "青绿 (Teal)"
-        case .blue: return "经典蓝 (Blue)"
-        case .green: return "森林绿 (Green)"
-        case .purple: return "鸢尾紫 (Purple)"
+        case .teal: return L10n.tr("青绿 (Teal)", "Teal")
+        case .blue: return L10n.tr("经典蓝 (Blue)", "Blue")
+        case .green: return L10n.tr("森林绿 (Green)", "Green")
+        case .purple: return L10n.tr("鸢尾紫 (Purple)", "Purple")
         }
     }
 }

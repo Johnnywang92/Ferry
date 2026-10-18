@@ -26,7 +26,7 @@ public struct KeyboardInteractiveDialog: View {
                     .foregroundColor(theme.accentColor)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(request.name.isEmpty ? "键盘交互认证" : request.name)
+                    Text(request.name.isEmpty ? L10n.tr("键盘交互认证", "Keyboard-Interactive Authentication") : request.name)
                         .font(FerryFont.bodyBold)
                         .foregroundColor(theme.text)
                     if !request.instruction.isEmpty {
@@ -61,14 +61,14 @@ public struct KeyboardInteractiveDialog: View {
             }
 
             HStack {
-                Button("取消") {
+                Button(L10n.tr("取消", "Cancel")) {
                     onResponse(nil)
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
-                Button("提交答案") {
+                Button(L10n.tr("提交答案", "Submit")) {
                     onResponse(answers)
                 }
                 .keyboardShortcut(.defaultAction)

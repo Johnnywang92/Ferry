@@ -8,6 +8,15 @@ public struct TransferQueuePanelView: View {
         case failed = "失败"
 
         public var id: String { rawValue }
+
+        @MainActor
+        public var displayName: String {
+            switch self {
+            case .all: return L10n.tr("全部", "All")
+            case .running: return L10n.tr("进行中", "Running")
+            case .failed: return L10n.tr("失败", "Failed")
+            }
+        }
     }
 
     @State private var selectedFilter: QueueFilter = .all
@@ -37,17 +46,17 @@ public struct TransferQueuePanelView: View {
         }
         let summary = connectionService.queueSummary
         if summary.running == 0 && summary.failed == 0 && summary.pending == 0 {
-            return connectionService.queueTasks.isEmpty ? "队列为空" : "全部传输已完成"
+            return connectionService.queueTasks.isEmpty ? L10n.tr("队列为空", "Queue empty") : L10n.tr("全部传输已完成", "All transfers completed")
         }
         var parts: [String] = []
         if summary.running > 0 {
-            parts.append("\(summary.running) 项进行中")
+            parts.append(L10n.format("%d 项进行中", "%d running", summary.running))
         }
         if summary.failed > 0 {
-            parts.append("\(summary.failed) 项失败")
+            parts.append(L10n.format("%d 项失败", "%d failed", summary.failed))
         }
         if summary.pending > 0 {
-            parts.append("\(summary.pending) 项等待")
+            parts.append(L10n.format("%d 项等待", "%d pending", summary.pending))
         }
         return parts.joined(separator: " · ")
     }
@@ -61,7 +70,7 @@ public struct TransferQueuePanelView: View {
                         .font(.system(size: 13))
                         .foregroundColor(theme.accentColor)
 
-                    Text("传输队列")
+                    Text(L10n.tr("传输队列", "Transfer Queue"))
                         .font(FerryFont.subheadlineBold)
                         .foregroundColor(theme.text)
 
@@ -75,7 +84,7 @@ public struct TransferQueuePanelView: View {
                 // 右侧筛选分段：全部 / 进行中 / 失败 (U8)
                 Picker("", selection: $selectedFilter) {
                     ForEach(QueueFilter.allCases) { filter in
-                        Text(filter.rawValue).tag(filter)
+                        Text(filter.displayName).tag(filter)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -98,7 +107,7 @@ public struct TransferQueuePanelView: View {
                     .background(theme.btn)
                     .cornerRadius(FerryRadius.r4)
                     .overlay(RoundedRectangle(cornerRadius: FerryRadius.r4).stroke(theme.btnRing, lineWidth: 1))
-                    .help(connectionService.queueSummary.running > 0 ? "全部暂停" : "全部继续")
+                    .help(connectionService.queueSummary.running > 0 ? L10n.tr("全部暂停", "Pause All") : L10n.tr("全部继续", "Resume All"))
 
                     Button(action: {
                         connectionService.clearCompletedQueueTasks()
@@ -111,7 +120,7 @@ public struct TransferQueuePanelView: View {
                     .background(theme.btn)
                     .cornerRadius(FerryRadius.r4)
                     .overlay(RoundedRectangle(cornerRadius: FerryRadius.r4).stroke(theme.btnRing, lineWidth: 1))
-                    .help("清空已完成项目")
+                    .help(L10n.tr("清空已完成项目", "Clear Completed Items"))
 
                     Button(action: {
                         connectionService.isQueuePanelPresented = false
@@ -124,7 +133,7 @@ public struct TransferQueuePanelView: View {
                     .background(theme.btn)
                     .cornerRadius(FerryRadius.r4)
                     .overlay(RoundedRectangle(cornerRadius: FerryRadius.r4).stroke(theme.btnRing, lineWidth: 1))
-                    .help("收起传输队列")
+                    .help(L10n.tr("收起传输队列", "Collapse Transfer Queue"))
                 }
             }
             .padding(.horizontal, 14)
@@ -152,7 +161,7 @@ public struct TransferQueuePanelView: View {
                         .foregroundColor(theme.accentColor)
                     Spacer()
                     if prep.scannedFilesCount > 0 {
-                        Text("已扫描 \(prep.scannedFilesCount) 个文件")
+                        Text(L10n.format("已扫描 %d 个文件", "%d files scanned", prep.scannedFilesCount))
                             .font(FerryFont.monoCaption)
                             .foregroundColor(theme.text2)
                     }
@@ -179,11 +188,11 @@ public struct TransferQueuePanelView: View {
                             .font(FerryFont.subheadlineBold)
                             .foregroundColor(theme.text)
                         if prep.scannedFilesCount > 0 {
-                            Text("已发现 \(prep.scannedFilesCount) 个文件，正在展开目录结构与比对冲突...")
+                            Text(L10n.format("已发现 %d 个文件，正在展开目录结构与比对冲突...", "Found %d files, expanding directory tree and checking conflicts...", prep.scannedFilesCount))
                                 .font(FerryFont.caption)
                                 .foregroundColor(theme.text2)
                         } else {
-                            Text("正在连接服务器并展开目标文件列表，请稍候...")
+                            Text(L10n.tr("正在连接服务器并展开目标文件列表，请稍候...", "Connecting to server and enumerating target files, please wait..."))
                                 .font(FerryFont.caption)
                                 .foregroundColor(theme.text2)
                         }
@@ -197,7 +206,7 @@ public struct TransferQueuePanelView: View {
                         Image(systemName: "tray")
                             .font(.system(size: 20))
                             .foregroundColor(theme.text3)
-                        Text("暂无传输任务")
+                        Text(L10n.tr("暂无传输任务", "No transfer tasks"))
                             .font(FerryFont.caption)
                             .foregroundColor(theme.text3)
                         Spacer()
@@ -225,7 +234,7 @@ public struct TransferQueuePanelView: View {
     private func taskRow(_ task: TransferTaskState) -> some View {
         HStack(spacing: 12) {
             // 方向标签
-            Text(task.direction.rawValue)
+            Text(task.direction == .upload ? L10n.tr("上传", "Upload") : L10n.tr("下载", "Download"))
                 .font(FerryFont.micro)
                 .foregroundColor(task.direction == .upload ? theme.accentColor : Color(hex: "#1F5FB4"))
                 .padding(.horizontal, 5)
@@ -321,12 +330,12 @@ public struct TransferQueuePanelView: View {
 
         case .failed(let message, _):
             HStack(spacing: 4) {
-                Text("失败 · \(message)")
+                Text(L10n.format("失败 · %@", "Failed · %@", message))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.errorRed)
                     .lineLimit(1)
 
-                Button("重试") {
+                Button(L10n.tr("重试", "Retry")) {
                     connectionService.retryQueueTask(id: task.id)
                 }
                 .font(FerryFont.captionBold)
@@ -335,17 +344,17 @@ public struct TransferQueuePanelView: View {
             }
 
         case .pending:
-            Text("等待中")
+            Text(L10n.tr("等待中", "Pending"))
                 .font(FerryFont.caption)
                 .foregroundColor(theme.text3)
 
         case .paused:
             HStack(spacing: 4) {
-                Text("已暂停")
+                Text(L10n.tr("已暂停", "Paused"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text3)
 
-                Button("继续") {
+                Button(L10n.tr("继续", "Resume")) {
                     connectionService.resumeQueueTask(id: task.id)
                 }
                 .font(FerryFont.captionBold)
@@ -354,12 +363,12 @@ public struct TransferQueuePanelView: View {
             }
 
         case .completed:
-            Text("已完成")
+            Text(L10n.tr("已完成", "Completed"))
                 .font(FerryFont.caption)
                 .foregroundColor(theme.successGreen)
 
         case .cancelled:
-            Text("已取消")
+            Text(L10n.tr("已取消", "Cancelled"))
                 .font(FerryFont.caption)
                 .foregroundColor(theme.text3)
         }
@@ -377,7 +386,7 @@ public struct TransferQueuePanelView: View {
                     .foregroundColor(theme.text2)
             }
             .buttonStyle(.plain)
-            .help("暂停任务")
+            .help(L10n.tr("暂停任务", "Pause Task"))
 
             Button(action: {
                 connectionService.cancelQueueTask(id: task.id)
@@ -387,7 +396,7 @@ public struct TransferQueuePanelView: View {
                     .foregroundColor(theme.text3)
             }
             .buttonStyle(.plain)
-            .help("取消任务并删除临时文件")
+            .help(L10n.tr("取消任务并删除临时文件", "Cancel task and delete temp file"))
 
         case .paused:
             Button(action: {
@@ -398,7 +407,7 @@ public struct TransferQueuePanelView: View {
                     .foregroundColor(theme.accentColor)
             }
             .buttonStyle(.plain)
-            .help("恢复断点续传")
+            .help(L10n.tr("恢复断点续传", "Resume Transfer"))
 
             Button(action: {
                 connectionService.cancelQueueTask(id: task.id)
@@ -408,7 +417,7 @@ public struct TransferQueuePanelView: View {
                     .foregroundColor(theme.text3)
             }
             .buttonStyle(.plain)
-            .help("取消任务")
+            .help(L10n.tr("取消任务", "Cancel Task"))
 
         case .failed:
             Button(action: {
@@ -419,7 +428,7 @@ public struct TransferQueuePanelView: View {
                     .foregroundColor(theme.accentColor)
             }
             .buttonStyle(.plain)
-            .help("重试任务")
+            .help(L10n.tr("重试任务", "Retry Task"))
 
             Button(action: {
                 connectionService.cancelQueueTask(id: task.id)
@@ -429,7 +438,7 @@ public struct TransferQueuePanelView: View {
                     .foregroundColor(theme.text3)
             }
             .buttonStyle(.plain)
-            .help("移除任务")
+            .help(L10n.tr("移除任务", "Remove Task"))
 
         case .completed, .cancelled:
             Button(action: {
@@ -440,7 +449,7 @@ public struct TransferQueuePanelView: View {
                     .foregroundColor(theme.text3)
             }
             .buttonStyle(.plain)
-            .help("移除记录")
+            .help(L10n.tr("移除记录", "Remove Record"))
         }
     }
 }

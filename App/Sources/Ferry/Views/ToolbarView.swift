@@ -43,41 +43,41 @@ public struct ToolbarView: View {
             let isPreparing = connectionService.transferPreparation != nil
 
             HStack(spacing: 4) {
-                toolbarButton(icon: "arrow.up.circle", label: "上传", isLoading: isUploading, action: onUpload)
+                toolbarButton(icon: "arrow.up.circle", label: L10n.tr("上传", "Upload"), isLoading: isUploading, action: onUpload)
                     .disabled(!isConnected || isPreparing)
 
-                toolbarButton(icon: "arrow.down.circle", label: "下载", isLoading: isDownloading, action: onDownload)
+                toolbarButton(icon: "arrow.down.circle", label: L10n.tr("下载", "Download"), isLoading: isDownloading, action: onDownload)
                     .disabled(!isConnected || isPreparing)
 
-                toolbarButton(icon: "folder.badge.plus", label: "新建文件夹", action: onNewFolder)
+                toolbarButton(icon: "folder.badge.plus", label: L10n.tr("新建文件夹", "New Folder"), action: onNewFolder)
 
-                toolbarButton(icon: "folder.badge.gearshape", label: "前往路径", action: { showingGoToFolder = true })
-                    .help("前往文件夹 (⌘⇧G)")
+                toolbarButton(icon: "folder.badge.gearshape", label: L10n.tr("前往路径", "Go to Path"), action: { showingGoToFolder = true })
+                    .help(L10n.tr("前往文件夹 (⌘⇧G)", "Go to Folder (⌘⇧G)"))
 
                 toolbarButton(
                     icon: themeManager.showHiddenFiles ? "eye" : "eye.slash",
-                    label: themeManager.showHiddenFiles ? "隐藏文件" : "显示隐藏",
+                    label: themeManager.showHiddenFiles ? L10n.tr("隐藏文件", "Hide Hidden") : L10n.tr("显示隐藏", "Show Hidden"),
                     action: { themeManager.toggleHiddenFiles() }
                 )
-                .help("切换显示以 . 开头的隐藏文件 (⌘⇧.)")
+                .help(L10n.tr("切换显示以 . 开头的隐藏文件 (⌘⇧.)", "Toggle hidden files (⌘⇧.)"))
 
-                toolbarButton(icon: "arrow.clockwise", label: "刷新", action: onRefresh)
+                toolbarButton(icon: "arrow.clockwise", label: L10n.tr("刷新", "Refresh"), action: onRefresh)
 
                 toolbarButton(
                     icon: connectionService.isQueuePanelPresented ? "tray.and.arrow.down.fill" : "tray.and.arrow.down",
-                    label: "队列",
+                    label: L10n.tr("队列", "Queue"),
                     action: { connectionService.isQueuePanelPresented.toggle() }
                 )
-                .help("展开/收起传输队列 (⌘J)")
+                .help(L10n.tr("展开/收起传输队列 (⌘J)", "Toggle transfer queue (⌘J)"))
 
-                toolbarButton(icon: "arrow.triangle.swap", label: "同步", action: onSync)
+                toolbarButton(icon: "arrow.triangle.swap", label: L10n.tr("同步", "Sync"), action: onSync)
                     .disabled(!isConnected)
-                    .help("文件夹双向同步与差异计划 (DiffPlan)")
+                    .help(L10n.tr("文件夹双向同步与差异计划 (DiffPlan)", "Two-way Folder Sync & DiffPlan"))
 
                 if isConnected {
-                    toolbarButton(icon: "bolt.slash.circle", label: "断开连接", action: onDisconnect)
+                    toolbarButton(icon: "bolt.slash.circle", label: L10n.tr("断开连接", "Disconnect"), action: onDisconnect)
                 } else {
-                    toolbarButton(icon: "plus.circle.fill", label: "新建连接", action: { showingNewConnection = true })
+                    toolbarButton(icon: "plus.circle.fill", label: L10n.tr("新建连接", "New Connect"), action: { showingNewConnection = true })
                 }
             }
 
@@ -91,7 +91,7 @@ public struct ToolbarView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
                     .foregroundColor(theme.text3)
-                TextField("过滤当前目录…", text: $searchText)
+                TextField(L10n.tr("过滤当前目录…", "Filter directory…"), text: $searchText)
                     .textFieldStyle(.plain)
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text)
@@ -142,7 +142,7 @@ public struct ToolbarView: View {
                         .font(.system(size: 17))
                         .frame(height: 20)
                 }
-                Text(isLoading ? "准备中..." : label)
+                Text(isLoading ? L10n.tr("准备中...", "Preparing...") : label)
                     .font(FerryFont.caption)
             }
             .frame(width: 56, height: 44)
@@ -160,7 +160,7 @@ public struct ToolbarView: View {
                 Circle()
                     .fill(Color.gray.opacity(0.6))
                     .frame(width: 8, height: 8)
-                Text("未连接")
+                Text(L10n.tr("未连接", "Disconnected"))
                     .font(FerryFont.captionMedium)
                     .foregroundColor(theme.text2)
 
@@ -179,7 +179,7 @@ public struct ToolbarView: View {
                     .foregroundColor(theme.text)
                 Text("·")
                     .foregroundColor(theme.text3)
-                Text("\(proto) · 已连接 · \(rtt) ms")
+                Text(L10n.format("%@ · 已连接 · %d ms", "%@ · Connected · %d ms", proto, rtt))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
@@ -187,7 +187,7 @@ public struct ToolbarView: View {
                 Circle()
                     .fill(theme.errorRed)
                     .frame(width: 8, height: 8)
-                Text("连接失败：\(msg)")
+                Text(L10n.format("连接失败：%@", "Connection Failed: %@", msg))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.errorRed)
                     .lineLimit(1)

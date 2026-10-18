@@ -26,7 +26,7 @@ public struct SidebarView: View {
                     // 站点分组
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
-                            Text("站点")
+                            Text(L10n.tr("站点", "Sites"))
                                 .font(FerryFont.captionBold)
                                 .foregroundColor(theme.text3)
                             Spacer()
@@ -38,7 +38,7 @@ public struct SidebarView: View {
                                     .foregroundColor(theme.text2)
                             }
                             .buttonStyle(.plain)
-                            .help("从 ~/.ssh/config 导入站点")
+                            .help(L10n.tr("从 ~/.ssh/config 导入站点", "Import sites from ~/.ssh/config"))
 
                             Button(action: {
                                 selectedBookmark = nil
@@ -49,7 +49,7 @@ public struct SidebarView: View {
                                     .foregroundColor(theme.text2)
                             }
                             .buttonStyle(.plain)
-                            .help("添加站点")
+                            .help(L10n.tr("添加站点", "Add Site"))
                         }
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
@@ -65,7 +65,7 @@ public struct SidebarView: View {
                     // 本地位置分组
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
-                            Text("本地位置")
+                            Text(L10n.tr("本地位置", "Locations"))
                                 .font(FerryFont.captionBold)
                                 .foregroundColor(theme.text3)
                             Spacer()
@@ -78,27 +78,27 @@ public struct SidebarView: View {
                                     .foregroundColor(theme.text2)
                             }
                             .buttonStyle(.plain)
-                            .help("添加本地位置")
+                            .help(L10n.tr("添加本地位置", "Add Location"))
                         }
                         .padding(.horizontal, 12)
                         .padding(.top, 4)
                         .padding(.bottom, 4)
                         .contextMenu {
-                            Button("添加本地位置…") {
+                            Button(L10n.tr("添加本地位置…", "Add Location…")) {
                                 locationToEdit = nil
                                 showingLocationDialog = true
                             }
-                            Button("恢复默认位置") {
+                            Button(L10n.tr("恢复默认位置", "Reset to Defaults")) {
                                 Task { await locationStore.resetToDefaults() }
                             }
                         }
 
                         if locationStore.locations.isEmpty {
                             VStack(spacing: 6) {
-                                Text("暂无快捷位置")
+                                Text(L10n.tr("暂无快捷位置", "No shortcuts"))
                                     .font(FerryFont.caption)
                                     .foregroundColor(theme.text3)
-                                Button("恢复默认位置") {
+                                Button(L10n.tr("恢复默认位置", "Reset to Defaults")) {
                                     Task { await locationStore.resetToDefaults() }
                                 }
                                 .font(FerryFont.caption)
@@ -126,7 +126,7 @@ public struct SidebarView: View {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 12))
                         .foregroundColor(theme.text3)
-                    Text("偏好设置与导入…")
+                    Text(L10n.tr("偏好设置与导入…", "Preferences & Imports…"))
                         .font(FerryFont.caption)
                         .foregroundColor(theme.text2)
                     Spacer()
@@ -219,20 +219,30 @@ public struct SidebarView: View {
             }
         )
         .contextMenu {
-            Button("连接") {
+            Button(L10n.tr("连接", "Connect")) {
                 onConnectSite(site)
             }
-            Button("编辑…") {
+            Button(L10n.tr("编辑…", "Edit…")) {
                 selectedBookmark = site
                 showingNewConnection = true
             }
             Divider()
-            Button("删除站点", role: .destructive) {
+            Button(L10n.tr("删除站点", "Delete Site"), role: .destructive) {
                 if selectedBookmark?.id == site.id {
                     selectedBookmark = nil
                 }
                 Task { await siteStore.delete(site.id) }
             }
+        }
+    }
+
+    private func localizedLocationName(_ location: LocalLocation) -> String {
+        switch location.id {
+        case "home": return L10n.tr("个人主目录", "Home")
+        case "desktop": return L10n.tr("桌面", "Desktop")
+        case "documents": return L10n.tr("文稿", "Documents")
+        case "downloads": return L10n.tr("下载", "Downloads")
+        default: return location.name
         }
     }
 
@@ -246,7 +256,7 @@ public struct SidebarView: View {
                     .foregroundColor(theme.icon)
                     .frame(width: 16)
 
-                Text(location.name)
+                Text(localizedLocationName(location))
                     .font(FerryFont.captionMedium)
                     .foregroundColor(theme.text)
                     .lineLimit(1)
@@ -260,21 +270,21 @@ public struct SidebarView: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 8)
         .contextMenu {
-            Button("在访达中显示") {
+            Button(L10n.tr("在访达中显示", "Show in Finder")) {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: location.url.path)
             }
             Divider()
-            Button("编辑…") {
+            Button(L10n.tr("编辑…", "Edit…")) {
                 locationToEdit = location
                 showingLocationDialog = true
             }
-            Button("从侧边栏移除", role: .destructive) {
+            Button(L10n.tr("从侧边栏移除", "Remove from Sidebar"), role: .destructive) {
                 Task {
                     await locationStore.delete(id: location.id)
                 }
             }
             Divider()
-            Button("恢复默认位置") {
+            Button(L10n.tr("恢复默认位置", "Reset to Defaults")) {
                 Task {
                     await locationStore.resetToDefaults()
                 }

@@ -44,10 +44,10 @@ public struct ConnectionDialogView: View {
         VStack(spacing: 0) {
             // 头部标题与副标题
             VStack(alignment: .leading, spacing: 4) {
-                Text(initialBookmark == nil ? "新建连接" : "编辑站点")
+                Text(initialBookmark == nil ? L10n.tr("新建连接", "New Connection") : L10n.tr("编辑站点", "Edit Site"))
                     .font(FerryFont.bodyBold)
                     .foregroundColor(theme.text)
-                Text("连接到 SFTP、FTP 或 FTPS 服务器。")
+                Text(L10n.tr("连接到 SFTP、FTP 或 FTPS 服务器。", "Connect to SFTP, FTP, or FTPS servers."))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
             }
@@ -62,13 +62,13 @@ public struct ConnectionDialogView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     // 名称
-                    formRow(label: "名称") {
-                        TextField("例：生产 Web", text: $bookmark.name)
+                    formRow(label: L10n.tr("名称", "Name")) {
+                        TextField(L10n.tr("例：生产 Web", "e.g. Production Web"), text: $bookmark.name)
                             .textFieldStyle(.roundedBorder)
                     }
 
                     // 协议
-                    formRow(label: "协议") {
+                    formRow(label: L10n.tr("协议", "Protocol")) {
                         Picker("", selection: $bookmark.protocolType) {
                             ForEach(ProtocolType.allCases) { proto in
                                 Text(proto.rawValue).tag(proto)
@@ -81,12 +81,12 @@ public struct ConnectionDialogView: View {
                     }
 
                     // 主机与端口
-                    formRow(label: "主机") {
+                    formRow(label: L10n.tr("主机", "Host")) {
                         HStack(spacing: 8) {
                             TextField("127.0.0.1", text: $bookmark.host)
                                 .textFieldStyle(.roundedBorder)
 
-                            Text("端口")
+                            Text(L10n.tr("端口", "Port"))
                                 .font(FerryFont.captionMedium)
                                 .foregroundColor(theme.text2)
 
@@ -97,10 +97,10 @@ public struct ConnectionDialogView: View {
                     }
 
                     // 认证方式
-                    formRow(label: "认证方式") {
+                    formRow(label: L10n.tr("认证方式", "Auth")) {
                         Picker("", selection: $bookmark.authType) {
                             ForEach(SiteAuthType.allCases) { auth in
-                                Text(auth.rawValue).tag(auth)
+                                Text(auth.displayName).tag(auth)
                             }
                         }
                         .pickerStyle(.segmented)
@@ -108,7 +108,7 @@ public struct ConnectionDialogView: View {
 
                     // 用户名
                     if bookmark.authType != .anonymous {
-                        formRow(label: "用户名") {
+                        formRow(label: L10n.tr("用户名", "Username")) {
                             TextField("username", text: $bookmark.username)
                                 .textFieldStyle(.roundedBorder)
                         }
@@ -117,34 +117,34 @@ public struct ConnectionDialogView: View {
                     // 密码 / 密钥
                     switch bookmark.authType {
                     case .password:
-                        formRow(label: "密码") {
+                        formRow(label: L10n.tr("密码", "Password")) {
                             SecureField("••••••••", text: $bookmark.password)
                                 .textFieldStyle(.roundedBorder)
                         }
                     case .privateKey:
-                        formRow(label: "私钥文件") {
+                        formRow(label: L10n.tr("私钥文件", "Private Key")) {
                             HStack(spacing: 8) {
                                 TextField("~/.ssh/id_ed25519", text: $bookmark.privateKeyPath)
                                     .textFieldStyle(.roundedBorder)
-                                Button("选择…") {
+                                Button(L10n.tr("选择…", "Browse…")) {
                                     pickKeyFile()
                                 }
                             }
                         }
-                        formRow(label: "私钥口令") {
-                            SecureField("若无密码保护可留空", text: $bookmark.passphrase)
+                        formRow(label: L10n.tr("私钥口令", "Passphrase")) {
+                            SecureField(L10n.tr("若无密码保护可留空", "Leave empty if not encrypted"), text: $bookmark.passphrase)
                                 .textFieldStyle(.roundedBorder)
                         }
                     case .sshAgent:
                         formRow(label: "ssh-agent") {
-                            Text("连接时将直接查询本地 $SSH_AUTH_SOCK 提供的密钥身份。")
+                            Text(L10n.tr("连接时将直接查询本地 $SSH_AUTH_SOCK 提供的密钥身份。", "Uses SSH identities provided by local $SSH_AUTH_SOCK directly."))
                                 .font(FerryFont.caption)
                                 .foregroundColor(theme.text3)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     case .anonymous:
-                        formRow(label: "匿名") {
-                            Text("以 anonymous 匿名身份连接（适用于只读 FTP 公开服务器）。")
+                        formRow(label: L10n.tr("匿名", "Anonymous")) {
+                            Text(L10n.tr("以 anonymous 匿名身份连接（适用于只读 FTP 公开服务器）。", "Connect anonymously (suitable for public read-only FTP servers)."))
                                 .font(FerryFont.caption)
                                 .foregroundColor(theme.text3)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -155,7 +155,7 @@ public struct ConnectionDialogView: View {
                     if bookmark.authType == .password || bookmark.authType == .privateKey {
                         HStack {
                             Text("").frame(width: 80)
-                            Toggle("将密码保存到钥匙串", isOn: $bookmark.savePasswordInKeychain)
+                            Toggle(L10n.tr("将密码保存到钥匙串", "Save password in Keychain"), isOn: $bookmark.savePasswordInKeychain)
                                 .font(FerryFont.subheadline)
                                 .toggleStyle(.checkbox)
                         }
@@ -164,7 +164,7 @@ public struct ConnectionDialogView: View {
                     // 弱算法兼容
                     HStack {
                         Text("").frame(width: 80)
-                        Toggle("允许弱算法（兼容老设备 CBC、ssh-rsa 等）", isOn: $bookmark.allowWeakAlgorithms)
+                        Toggle(L10n.tr("允许弱算法（兼容老设备 CBC、ssh-rsa 等）", "Allow legacy algorithms (CBC, ssh-rsa, etc.)"), isOn: $bookmark.allowWeakAlgorithms)
                             .font(FerryFont.caption)
                             .foregroundColor(theme.text2)
                             .toggleStyle(.checkbox)
@@ -173,7 +173,7 @@ public struct ConnectionDialogView: View {
                     Divider().background(theme.line).padding(.vertical, 2)
 
                     // 文件名字符集
-                    formRow(label: "字符集") {
+                    formRow(label: L10n.tr("字符集", "Encoding")) {
                         Picker("", selection: $bookmark.charset) {
                             ForEach(CharsetConverter.Charset.allCases) { cs in
                                 Text(cs.displayName).tag(cs)
@@ -183,15 +183,15 @@ public struct ConnectionDialogView: View {
                     }
 
                     // 远程目录
-                    formRow(label: "远程目录") {
-                        TextField("默认为登录目录，如 /var/www/html", text: $bookmark.remotePath)
+                    formRow(label: L10n.tr("远程目录", "Remote Path")) {
+                        TextField(L10n.tr("默认为登录目录，如 /var/www/html", "Default login directory, e.g. /var/www/html"), text: $bookmark.remotePath)
                             .textFieldStyle(.roundedBorder)
                     }
 
                     // 本地目录
-                    formRow(label: "本地目录") {
+                    formRow(label: L10n.tr("本地目录", "Local Path")) {
                         HStack(spacing: 8) {
-                            Text(bookmark.localPath.isEmpty ? "未指定" : bookmark.localPath)
+                            Text(bookmark.localPath.isEmpty ? L10n.tr("未指定", "Not specified") : bookmark.localPath)
                                 .font(FerryFont.caption)
                                 .foregroundColor(theme.text)
                                 .lineLimit(1)
@@ -201,7 +201,7 @@ public struct ConnectionDialogView: View {
                                 .background(theme.field)
                                 .cornerRadius(FerryRadius.r4)
 
-                            Button("选择…") {
+                            Button(L10n.tr("选择…", "Browse…")) {
                                 pickLocalFolder()
                             }
                         }
@@ -211,7 +211,7 @@ public struct ConnectionDialogView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(theme.warningOrange)
-                            Text("该站点配置了 ProxyJump (\(proxy))，M2 暂不支持代理跳板直连。")
+                            Text(L10n.format("该站点配置了 ProxyJump (%@)，暂不支持代理跳板直连。", "Site configured with ProxyJump (%@), jump hosts are not supported yet.", proxy))
                                 .font(FerryFont.caption)
                                 .foregroundColor(theme.warningOrange)
                         }
@@ -249,21 +249,21 @@ public struct ConnectionDialogView: View {
                     if isTesting {
                         ProgressView().controlSize(.small)
                             .padding(.trailing, 4)
-                        Text("测试中...")
+                        Text(L10n.tr("测试中...", "Testing..."))
                     } else {
-                        Text("测试连接")
+                        Text(L10n.tr("测试连接", "Test Connection"))
                     }
                 }
                 .disabled(isTesting || bookmark.host.isEmpty)
 
                 Spacer()
 
-                Button("取消") {
+                Button(L10n.tr("取消", "Cancel")) {
                     isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("保存") {
+                Button(L10n.tr("保存", "Save")) {
                     var toSave = bookmark
                     if toSave.name.trimmingCharacters(in: .whitespaces).isEmpty {
                         toSave.name = toSave.host
@@ -273,7 +273,7 @@ public struct ConnectionDialogView: View {
                 }
                 .disabled(bookmark.host.isEmpty)
 
-                Button("连接") {
+                Button(L10n.tr("连接", "Connect")) {
                     var toConnect = bookmark
                     if toConnect.name.trimmingCharacters(in: .whitespaces).isEmpty {
                         toConnect.name = toConnect.host
@@ -342,7 +342,7 @@ public struct ConnectionDialogView: View {
                 if let data = try? Data(contentsOf: URL(fileURLWithPath: (bookmark.privateKeyPath as NSString).expandingTildeInPath)) {
                     authMethod = .privateKey(PrivateKeyMaterial(keyData: data, passphrase: bookmark.passphrase.isEmpty ? nil : bookmark.passphrase))
                 } else {
-                    testResult = "无法读取私钥文件"
+                    testResult = L10n.tr("无法读取私钥文件", "Failed to read private key file")
                     testSuccess = false
                     isTesting = false
                     return
@@ -351,7 +351,7 @@ public struct ConnectionDialogView: View {
                 authMethod = .sshAgent
             case .anonymous:
                 if bookmark.protocolType == .sftp {
-                    testResult = "SFTP 暂不支持匿名认证"
+                    testResult = L10n.tr("SFTP 暂不支持匿名认证", "SFTP does not support anonymous login")
                     testSuccess = false
                     isTesting = false
                     return
@@ -393,14 +393,14 @@ public struct ConnectionDialogView: View {
                 await conn.close()
                 await MainActor.run {
                     self.testSuccess = true
-                    self.testResult = "连接测试成功！往返耗时 \(elapsedMs) ms"
+                    self.testResult = L10n.format("连接测试成功！往返耗时 %d ms", "Connection successful! RTT: %d ms", elapsedMs)
                     self.isTesting = false
                 }
             } catch {
                 await conn.close()
                 await MainActor.run {
                     self.testSuccess = false
-                    self.testResult = "连接失败：\(error.localizedDescription)"
+                    self.testResult = L10n.format("连接失败：%@", "Connection failed: %@", error.localizedDescription)
                     self.isTesting = false
                 }
             }

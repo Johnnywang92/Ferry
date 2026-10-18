@@ -13,6 +13,18 @@ public enum HelpTab: String, CaseIterable, Identifiable, Sendable {
 
     public var id: String { rawValue }
 
+    @MainActor
+    public var displayName: String {
+        switch self {
+        case .gettingStarted: return L10n.tr("快速上手", "Getting Started")
+        case .fileOperations: return L10n.tr("文件操作", "File Operations")
+        case .transferQueue: return L10n.tr("传输队列", "Transfer Queue")
+        case .syncEngine: return L10n.tr("双向同步", "Two-way Sync")
+        case .shortcuts: return L10n.tr("快捷键速查", "Shortcuts")
+        case .troubleshooting: return L10n.tr("排查与关于", "Troubleshooting & About")
+        }
+    }
+
     public var icon: String {
         switch self {
         case .gettingStarted: return "sparkles"
@@ -50,7 +62,7 @@ public struct HelpSheetView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
-                        Text("Ferry 帮助与使用指南")
+                        Text(L10n.tr("Ferry 帮助与使用指南", "Ferry Help & User Guide"))
                             .font(FerryFont.titleBold)
                             .foregroundColor(theme.text)
                         Text("v1.0.0-beta.1")
@@ -61,14 +73,14 @@ public struct HelpSheetView: View {
                             .foregroundColor(theme.accentColor)
                             .cornerRadius(FerryRadius.r4)
                     }
-                    Text("专为 macOS 设计的现代化高韧性 SFTP / FTP / FTPS 文件传输客户端")
+                    Text(L10n.tr("专为 macOS 设计的现代化高韧性 SFTP / FTP / FTPS 文件传输客户端", "Modern, resilient SFTP / FTP / FTPS file transfer client designed for macOS"))
                         .font(FerryFont.caption)
                         .foregroundColor(theme.text2)
                 }
 
                 Spacer()
 
-                Button("完成") {
+                Button(L10n.tr("完成", "Done")) {
                     isPresented = false
                 }
                 .keyboardShortcut(.defaultAction)
@@ -84,7 +96,7 @@ public struct HelpSheetView: View {
             HStack {
                 Picker("", selection: $selectedTab) {
                     ForEach(HelpTab.allCases) { tab in
-                        Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                        Label(tab.displayName, systemImage: tab.icon).tag(tab)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -131,7 +143,7 @@ public struct HelpSheetView: View {
                         NSWorkspace.shared.open(url)
                     }
                 }) {
-                    Label("GitHub 开源仓库", systemImage: "link")
+                    Label(L10n.tr("GitHub 开源仓库", "GitHub Repository"), systemImage: "link")
                         .font(FerryFont.caption)
                 }
                 .buttonStyle(.link)
@@ -277,19 +289,19 @@ public struct HelpSheetView: View {
 
     private var shortcutsView: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("核心操作快捷键矩阵")
+            Text(L10n.tr("核心操作快捷键矩阵", "Core Keyboard Shortcuts"))
                 .font(FerryFont.subheadlineBold)
                 .foregroundColor(theme.text)
 
             VStack(spacing: 8) {
-                shortcutRow(keys: "⌘ N", action: "新建连接对话框")
-                shortcutRow(keys: "⌘ ,", action: "打开偏好设置与导入")
-                shortcutRow(keys: "⌘ ⇧ G", action: "快速前往文件夹路径")
-                shortcutRow(keys: "⌘ ⇧ .", action: "实时切换显示隐藏文件")
-                shortcutRow(keys: "⌘ J", action: "展开 / 收起传输队列面板")
-                shortcutRow(keys: "Space (空格)", action: "Quick Look 快速预览选中文件")
-                shortcutRow(keys: "Enter (回车)", action: "就地重命名当前选中的文件或目录")
-                shortcutRow(keys: "⌘ ?", action: "调起本帮助与使用指南")
+                shortcutRow(keys: "⌘ N", action: L10n.tr("新建连接对话框", "New Connection dialog"))
+                shortcutRow(keys: "⌘ ,", action: L10n.tr("打开偏好设置与导入", "Open Preferences & Import"))
+                shortcutRow(keys: "⌘ ⇧ G", action: L10n.tr("快速前往文件夹路径", "Go to Folder path"))
+                shortcutRow(keys: "⌘ ⇧ .", action: L10n.tr("实时切换显示隐藏文件", "Toggle hidden files"))
+                shortcutRow(keys: "⌘ J", action: L10n.tr("展开 / 收起传输队列面板", "Toggle transfer queue panel"))
+                shortcutRow(keys: "Space (空格)", action: L10n.tr("Quick Look 快速预览选中文件", "Quick Look preview selected file"))
+                shortcutRow(keys: "Enter (回车)", action: L10n.tr("就地重命名当前选中的文件或目录", "Rename selected item inline"))
+                shortcutRow(keys: "⌘ ?", action: L10n.tr("调起本帮助与使用指南", "Open Help & User Guide"))
             }
             .padding(14)
             .background(theme.panel)
@@ -300,28 +312,34 @@ public struct HelpSheetView: View {
     private var troubleshootingView: some View {
         VStack(alignment: .leading, spacing: 14) {
             helpCard(
-                title: "主机密钥信任 (TOFU) 与指纹变更警告",
+                title: L10n.tr("主机密钥信任 (TOFU) 与指纹变更警告", "Host Key Trust (TOFU) & Fingerprint Warning"),
                 icon: "shield.lefthalf.filled",
-                content: """
+                content: L10n.tr("""
                 • 首次连接新服务器时，Ferry 会弹出公钥指纹询问（支持 MD5 / SHA-256 指纹展示）；
                 • 若服务器重装或被中间人攻击导致公钥变更，系统会实施**硬阻断警告**，并提供一键移除旧信任记录的防呆机制。
-                """
+                """, """
+                • When connecting to a new server, Ferry displays public key fingerprints (MD5 / SHA-256);
+                • If the host key changes unexpectedly, Ferry triggers a strict security warning and allows clearing stale trust records.
+                """)
             )
 
             helpCard(
-                title: "一键导出脱敏诊断报告",
+                title: L10n.tr("一键导出脱敏诊断报告", "Export Sanitized Diagnostic Report"),
                 icon: "stethoscope",
-                content: """
+                content: L10n.tr("""
                 • 遇到连接超时、算法协商失败或传输异常时，可一键导出脱敏诊断报告；
                 • 报告自动掩码敏感信息（用户名保护、密码与私钥绝不入日志），内置智能错误映射表指导排查。
-                """
+                """, """
+                • In case of timeouts, negotiation failures, or transfer issues, export a sanitized diagnostic report;
+                • Sensitive data is masked (passwords/keys never logged) with smart troubleshooting recommendations.
+                """)
             )
 
             HStack {
                 Button(action: {
                     exportDiagnosticReport()
                 }) {
-                    Label("立即导出脱敏诊断报告…", systemImage: "square.and.arrow.up")
+                    Label(L10n.tr("立即导出脱敏诊断报告…", "Export Sanitized Diagnostic Report…"), systemImage: "square.and.arrow.up")
                         .font(FerryFont.captionBold)
                 }
                 .buttonStyle(.bordered)

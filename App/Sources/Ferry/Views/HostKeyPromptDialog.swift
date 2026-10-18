@@ -26,10 +26,10 @@ public struct HostKeyPromptDialog: View {
                     .foregroundColor(theme.accentColor)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("无法验证主机真实性")
+                    Text(L10n.tr("无法验证主机真实性", "Authenticity of Host Cannot Be Established"))
                         .font(FerryFont.bodyBold)
                         .foregroundColor(theme.text)
-                    Text("首次连接到此服务器，或服务器的主机密钥类型已变更。")
+                    Text(L10n.tr("首次连接到此服务器，或服务器的主机密钥类型已变更。", "Connecting to this host for the first time, or host key type changed."))
                         .font(FerryFont.caption)
                         .foregroundColor(theme.text2)
                 }
@@ -38,17 +38,17 @@ public struct HostKeyPromptDialog: View {
             Divider().background(theme.line)
 
             VStack(alignment: .leading, spacing: 8) {
-                infoRow(label: "主机目标", value: question.endpoint.displayString)
-                infoRow(label: "密钥类型", value: "\(question.hostKey.wireType)（协商算法 \(question.hostKey.algorithm)）")
-                infoRow(label: "密钥指纹", value: fingerprint, isMono: true)
+                infoRow(label: L10n.tr("主机目标", "Endpoint"), value: question.endpoint.displayString)
+                infoRow(label: L10n.tr("密钥类型", "Key Type"), value: "\(question.hostKey.wireType) (\(question.hostKey.algorithm))")
+                infoRow(label: L10n.tr("密钥指纹", "Fingerprint"), value: fingerprint, isMono: true)
 
                 switch question.reason {
                 case .unknownHost:
-                    infoRow(label: "判定原因", value: "在 known_hosts 中未找到该主机的任何记录（TOFU 首次信任）")
+                    infoRow(label: L10n.tr("判定原因", "Reason"), value: L10n.tr("在 known_hosts 中未找到该主机的任何记录（TOFU 首次信任）", "No record in known_hosts (TOFU trust on first use)"))
                 case .hostKnownWithOtherAlgorithms(let knownTypes, let source):
-                    infoRow(label: "判定原因", value: "主机已知，但此前记录的算法为 [\(knownTypes.joined(separator: ", "))]（来源：\(source)）")
+                    infoRow(label: L10n.tr("判定原因", "Reason"), value: L10n.format("主机已知，但此前记录的算法为 [%@]（来源：%@）", "Host known with [%@] (source: %@)", knownTypes.joined(separator: ", "), source))
                 case .certificateOnly(let source):
-                    infoRow(label: "判定原因", value: "表里仅有证书行，线路未呈上对应证书（来源：\(source)）")
+                    infoRow(label: L10n.tr("判定原因", "Reason"), value: L10n.format("表里仅有证书行，线路未呈上对应证书（来源：%@）", "Certificate-only lines found, raw key presented (source: %@)", source))
                 }
             }
             .padding(12)
@@ -57,10 +57,10 @@ public struct HostKeyPromptDialog: View {
 
             Toggle(isOn: $alsoWriteToKnownHosts) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("同时追加写入系统的 ~/.ssh/known_hosts")
+                    Text(L10n.tr("同时追加写入系统的 ~/.ssh/known_hosts", "Append to system ~/.ssh/known_hosts as well"))
                         .font(FerryFont.subheadlineMedium)
                         .foregroundColor(theme.text)
-                    Text("勾选后，终端中的 ssh 命令将能够共享信任此密钥；不勾选则仅由 Ferry 独立记录。")
+                    Text(L10n.tr("勾选后，终端中的 ssh 命令将能够共享信任此密钥；不勾选则仅由 Ferry 独立记录。", "When checked, terminal ssh commands will trust this key. Otherwise, trusted only by Ferry."))
                         .font(FerryFont.micro)
                         .foregroundColor(theme.text3)
                 }
@@ -69,14 +69,14 @@ public struct HostKeyPromptDialog: View {
             .padding(.top, 4)
 
             HStack {
-                Button("拒绝并取消") {
+                Button(L10n.tr("拒绝并取消", "Decline & Cancel")) {
                     onDecision(.decline)
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
-                Button("信任并继续连接") {
+                Button(L10n.tr("信任并继续连接", "Trust & Connect")) {
                     if alsoWriteToKnownHosts {
                         onDecision(.acceptAndWriteKnownHosts)
                     } else {
@@ -130,10 +130,10 @@ public struct HostKeyMismatchDialog: View {
                     .foregroundColor(theme.errorRed)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("严重安全警告：远程主机密钥已变更！")
+                    Text(L10n.tr("严重安全警告：远程主机密钥已变更！", "SECURITY WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!"))
                         .font(FerryFont.bodyBold)
                         .foregroundColor(theme.errorRed)
-                    Text("连接已被硬阻断。这可能意味着正在遭受中间人攻击（MITM），或管理员刚刚重装/轮换了服务器密钥。")
+                    Text(L10n.tr("连接已被硬阻断。这可能意味着正在遭受中间人攻击（MITM），或管理员刚刚重装/轮换了服务器密钥。", "Connection blocked. Someone could be eavesdropping on you right now (MITM), or the administrator just rotated the key."))
                         .font(FerryFont.caption)
                         .foregroundColor(theme.text2)
                 }
@@ -143,7 +143,7 @@ public struct HostKeyMismatchDialog: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
-                    Text("目标主机：")
+                    Text(L10n.tr("目标主机：", "Target Host:"))
                         .font(FerryFont.captionMedium)
                         .foregroundColor(theme.text3)
                         .frame(width: 76, alignment: .trailing)
@@ -152,7 +152,7 @@ public struct HostKeyMismatchDialog: View {
                         .foregroundColor(theme.text)
                 }
                 HStack(alignment: .top, spacing: 8) {
-                    Text("新密钥指纹：")
+                    Text(L10n.tr("新密钥指纹：", "New Fingerprint:"))
                         .font(FerryFont.captionMedium)
                         .foregroundColor(theme.text3)
                         .frame(width: 76, alignment: .trailing)
@@ -166,18 +166,18 @@ public struct HostKeyMismatchDialog: View {
             .background(theme.field)
             .cornerRadius(FerryRadius.r6)
 
-            Text("根据 TOFU 安全基线，Ferry 不允许在不验证的情况下直接跳过密钥不匹配。若你已与服务器管理员核实此次密钥轮换属实，可移除 Ferry 已知主机库中的旧记录并重新发起连接。")
+            Text(L10n.tr("根据 TOFU 安全基线，Ferry 不允许在不验证的情况下直接跳过密钥不匹配。若你已与服务器管理员核实此次密钥轮换属实，可移除 Ferry 已知主机库中的旧记录并重新发起连接。", "Under TOFU security policy, Ferry does not allow bypassing mismatched host keys. If verified with the administrator, remove the stale host key record and reconnect."))
                 .font(FerryFont.micro)
                 .foregroundColor(theme.text3)
 
             HStack {
-                Button("移除旧主机记录并重新连接…", role: .destructive) {
+                Button(L10n.tr("移除旧主机记录并重新连接…", "Remove Old Key & Reconnect…"), role: .destructive) {
                     onRemoveAndReconnect()
                 }
 
                 Spacer()
 
-                Button("保持断开") {
+                Button(L10n.tr("保持断开", "Stay Disconnected")) {
                     onDismiss()
                 }
                 .keyboardShortcut(.defaultAction)

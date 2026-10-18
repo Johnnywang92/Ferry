@@ -63,7 +63,7 @@ public struct NewFolderDialog: View {
                 Image(systemName: "folder.badge.plus")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(theme.accentColor)
-                Text(isRemote ? "新建远程文件夹" : "新建本地文件夹")
+                Text(isRemote ? L10n.tr("新建远程文件夹", "New Remote Folder") : L10n.tr("新建本地文件夹", "New Local Folder"))
                     .font(FerryFont.bodyBold)
                     .foregroundColor(theme.text)
                 Spacer()
@@ -71,16 +71,16 @@ public struct NewFolderDialog: View {
 
             // 目标面板切换（仅在已连接远程时展示）
             if isRemoteConnected {
-                Picker("目标位置", selection: $isRemote) {
-                    Text("本地目录").tag(false)
-                    Text("远程目录").tag(true)
+                Picker(L10n.tr("目标位置", "Target Location"), selection: $isRemote) {
+                    Text(L10n.tr("本地目录", "Local Directory")).tag(false)
+                    Text(L10n.tr("远程目录", "Remote Directory")).tag(true)
                 }
                 .pickerStyle(.segmented)
             }
 
             // 目标路径展示卡片（防超长路径撑破布局，使用中段省略和固定容器）
             VStack(alignment: .leading, spacing: 4) {
-                Text("创建于以下目录：")
+                Text(L10n.tr("创建于以下目录：", "Create in:"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
@@ -109,11 +109,11 @@ public struct NewFolderDialog: View {
 
             // 文件夹名称输入框
             VStack(alignment: .leading, spacing: 6) {
-                Text("文件夹名称：")
+                Text(L10n.tr("文件夹名称：", "Folder Name:"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
-                TextField("输入文件夹名称", text: $folderName)
+                TextField(L10n.tr("输入文件夹名称", "Enter folder name"), text: $folderName)
                     .textFieldStyle(.roundedBorder)
                     .font(FerryFont.body)
                     .focused($isFieldFocused)
@@ -126,7 +126,7 @@ public struct NewFolderDialog: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 10))
                             .foregroundColor(theme.errorRed)
-                        Text("文件夹名称不能包含 “/”")
+                        Text(L10n.tr("文件夹名称不能包含 “/”", "Folder name cannot contain '/'"))
                             .font(FerryFont.caption)
                             .foregroundColor(theme.errorRed)
                     }
@@ -135,14 +135,14 @@ public struct NewFolderDialog: View {
 
             // 操作按钮组
             HStack {
-                Button("取消") {
+                Button(L10n.tr("取消", "Cancel")) {
                     isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
-                Button("创建") {
+                Button(L10n.tr("创建", "Create")) {
                     submit()
                 }
                 .keyboardShortcut(.defaultAction)

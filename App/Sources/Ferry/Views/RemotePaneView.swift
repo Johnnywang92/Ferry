@@ -69,7 +69,7 @@ public struct RemotePaneView: View {
             // 栏头：远程标签 + 路径栏 + 上一级 + 刷新
             HStack(spacing: 8) {
                 // `远程` 标签
-                Text("远程")
+                Text(L10n.tr("远程", "Remote"))
                     .font(FerryFont.micro)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -79,7 +79,7 @@ public struct RemotePaneView: View {
 
                 // 路径栏（支持点击直接输入远程路径跳转）
                 if isEditingPath && isConnected {
-                    TextField("输入远程路径…", text: $editedPathText)
+                    TextField(L10n.tr("输入远程路径…", "Enter remote path…"), text: $editedPathText)
                         .textFieldStyle(.plain)
                         .font(FerryFont.monoSmall)
                         .foregroundColor(theme.text)
@@ -126,7 +126,7 @@ public struct RemotePaneView: View {
                             isPathFieldFocused = true
                         }
                     }
-                    .help(isConnected ? "点击直接输入远程路径，或按 ⌘⇧G 前往文件夹" : "连接后可浏览远程路径")
+                    .help(isConnected ? L10n.tr("点击直接输入远程路径，或按 ⌘⇧G 前往文件夹", "Click to edit remote path, or press ⌘⇧G") : L10n.tr("连接后可浏览远程路径", "Connect to browse remote path"))
                 }
 
                 // 返回上一级
@@ -145,7 +145,7 @@ public struct RemotePaneView: View {
                         .cornerRadius(FerryRadius.r4)
                 }
                 .buttonStyle(.plain)
-                .help("上一级")
+                .help(L10n.tr("上一级", "Parent Folder"))
                 .disabled(!isConnected || connectionService.currentRemotePath?.description == "/")
 
                 // 刷新
@@ -161,7 +161,7 @@ public struct RemotePaneView: View {
                         .cornerRadius(FerryRadius.r4)
                 }
                 .buttonStyle(.plain)
-                .help("刷新远程目录")
+                .help(L10n.tr("刷新远程目录", "Refresh Remote Directory"))
                 .disabled(!isConnected)
             }
             .padding(.horizontal, 10)
@@ -193,7 +193,7 @@ public struct RemotePaneView: View {
                             .foregroundColor(theme.text3)
                     }
                     .buttonStyle(.plain)
-                    .help("忽略提示")
+                    .help(L10n.tr("忽略提示", "Dismiss"))
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -208,17 +208,17 @@ public struct RemotePaneView: View {
 
             // 表头：名称 / 修改时间 / 大小 / 权限（支持点击排序）
             HStack(spacing: 0) {
-                columnHeader(title: "名称", field: .name, alignment: .leading)
+                columnHeader(title: L10n.tr("名称", "Name"), field: .name, alignment: .leading)
                     .padding(.leading, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                columnHeader(title: "修改时间", field: .modificationDate, alignment: .leading)
+                columnHeader(title: L10n.tr("修改时间", "Date Modified"), field: .modificationDate, alignment: .leading)
                     .frame(width: 120, alignment: .leading)
 
-                columnHeader(title: "大小", field: .size, alignment: .trailing)
+                columnHeader(title: L10n.tr("大小", "Size"), field: .size, alignment: .trailing)
                     .frame(width: 75, alignment: .trailing)
 
-                columnHeader(title: "权限", field: .permissions, alignment: .center)
+                columnHeader(title: L10n.tr("权限", "Permissions"), field: .permissions, alignment: .center)
                     .frame(width: 90, alignment: .center)
                     .padding(.trailing, 12)
             }
@@ -253,37 +253,37 @@ public struct RemotePaneView: View {
                         : nil
                 )
                 .contextMenu {
-                    Button("新建远程文件夹…") {
+                    Button(L10n.tr("新建远程文件夹…", "New Remote Folder…")) {
                         onNewRemoteFolder()
                     }
-                    Button(themeManager.showHiddenFiles ? "隐藏以 . 开头的隐藏文件" : "显示隐藏文件") {
+                    Button(themeManager.showHiddenFiles ? L10n.tr("隐藏以 . 开头的隐藏文件", "Hide Hidden Files") : L10n.tr("显示隐藏文件", "Show Hidden Files")) {
                         themeManager.toggleHiddenFiles()
                     }
-                    Menu("文件名字符集 (\(connectionService.currentCharset.displayName))") {
+                    Menu(L10n.format("文件名字符集 (%@)", "Encoding (%@)", connectionService.currentCharset.displayName)) {
                         ForEach(CharsetConverter.Charset.allCases) { cs in
                             Button(cs.displayName) {
                                 connectionService.setCharset(cs)
                             }
                         }
                     }
-                    Button("刷新") {
+                    Button(L10n.tr("刷新", "Refresh")) {
                         Task { await connectionService.refreshRemote() }
                     }
                 }
             }
         }
         .alert(
-            itemToDelete?.isDirectory == true ? "永久删除远程文件夹" : "永久删除远程文件",
+            itemToDelete?.isDirectory == true ? L10n.tr("永久删除远程文件夹", "Delete Remote Folder Permanently") : L10n.tr("永久删除远程文件", "Delete Remote File Permanently"),
             isPresented: Binding(
                 get: { itemToDelete != nil },
                 set: { if !$0 { itemToDelete = nil } }
             ),
             presenting: itemToDelete
         ) { item in
-            Button("取消", role: .cancel) {
+            Button(L10n.tr("取消", "Cancel"), role: .cancel) {
                 itemToDelete = nil
             }
-            Button("永久删除", role: .destructive) {
+            Button(L10n.tr("永久删除", "Delete Permanently"), role: .destructive) {
                 Task {
                     let result = await connectionService.deleteRemoteItem(item)
                     if result.success {
@@ -293,7 +293,7 @@ public struct RemotePaneView: View {
                 itemToDelete = nil
             }
         } message: { item in
-            Text("确定要从远程服务器上永久删除“\(item.name)”吗？此操作无法撤销。")
+            Text(L10n.format("确定要从远程服务器上永久删除“%@”吗？此操作无法撤销。", "Are you sure you want to permanently delete \"%@\" from the remote server? This action cannot be undone.", item.name))
         }
         .onChange(of: connectionService.currentRemotePath) { _, newPath in
             isEditingPath = false
@@ -371,24 +371,24 @@ public struct RemotePaneView: View {
         if let path = connectionService.currentRemotePath {
             return path.description
         }
-        return "未连接"
+        return L10n.tr("未连接", "Disconnected")
     }
 
     private var unconnectedPlaceholder: some View {
         VStack(spacing: 14) {
             AppIconView(size: 56)
 
-            Text("未连接到远程服务器")
+            Text(L10n.tr("未连接到远程服务器", "Not Connected to Remote Server"))
                 .font(FerryFont.bodyBold)
                 .foregroundColor(theme.text)
 
-            Text("点击下方按钮新建连接，或在左侧选择站点连接。")
+            Text(L10n.tr("点击下方按钮新建连接，或在左侧选择站点连接。", "Click below to create a new connection, or select a site from the sidebar."))
                 .font(FerryFont.caption)
                 .foregroundColor(theme.text2)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 260)
 
-            Button("新建连接…") {
+            Button(L10n.tr("新建连接…", "New Connection…")) {
                 showingNewConnection = true
             }
             .buttonStyle(.borderedProminent)
@@ -469,12 +469,12 @@ public struct RemotePaneView: View {
             }
         )
         .contextMenu {
-            Button(item.isDirectory ? "下载文件夹到当前本地目录" : "下载到当前本地目录") {
+            Button(item.isDirectory ? L10n.tr("下载文件夹到当前本地目录", "Download Folder to Local") : L10n.tr("下载到当前本地目录", "Download to Local")) {
                 selectedIDs = [item.id]
                 onDownloadSelected()
             }
             if !item.isDirectory {
-                Button("用外部编辑器打开") {
+                Button(L10n.tr("用外部编辑器打开", "Open with External Editor")) {
                     Task {
                         try? await ExternalEditService.shared.openForEditing(
                             remoteItem: item,
@@ -482,7 +482,7 @@ public struct RemotePaneView: View {
                         )
                     }
                 }
-                Button("快速预览 (Quick Look)") {
+                Button(L10n.tr("快速预览 (Quick Look)", "Quick Look")) {
                     QuickLookService.shared.togglePreview(
                         remoteItem: item,
                         connection: connectionService.activeConnection
@@ -490,7 +490,7 @@ public struct RemotePaneView: View {
                 }
             }
             if item.isDirectory {
-                Button("打开远程文件夹") {
+                Button(L10n.tr("打开远程文件夹", "Open Remote Folder")) {
                     cancelPathEdit()
                     Task {
                         await connectionService.navigateRemote(to: item.path)
@@ -499,20 +499,20 @@ public struct RemotePaneView: View {
                 }
             }
             Divider()
-            Button("重命名…") {
+            Button(L10n.tr("重命名…", "Rename…")) {
                 onRenameRemote(item)
             }
             Button(role: .destructive) {
                 itemToDelete = item
             } label: {
-                Text(item.isDirectory ? "删除文件夹…" : "删除文件…")
+                Text(item.isDirectory ? L10n.tr("删除文件夹…", "Delete Folder…") : L10n.tr("删除文件…", "Delete File…"))
             }
-            Button("复制远程路径") {
+            Button(L10n.tr("复制远程路径", "Copy Remote Path")) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(item.path.description, forType: .string)
             }
             Divider()
-            Button("新建远程文件夹…") {
+            Button(L10n.tr("新建远程文件夹…", "New Remote Folder…")) {
                 onNewRemoteFolder()
             }
         }

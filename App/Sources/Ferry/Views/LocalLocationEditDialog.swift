@@ -76,7 +76,7 @@ public struct LocalLocationEditDialog: View {
                 Image(systemName: isEditing ? "pencil.circle.fill" : "folder.badge.plus")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(theme.accentColor)
-                Text(isEditing ? "编辑本地位置" : "添加本地位置")
+                Text(isEditing ? L10n.tr("编辑本地位置", "Edit Location") : L10n.tr("添加本地位置", "Add Location"))
                     .font(FerryFont.bodyBold)
                     .foregroundColor(theme.text)
                 Spacer()
@@ -84,7 +84,7 @@ public struct LocalLocationEditDialog: View {
 
             // 目标文件夹选择展示卡片
             VStack(alignment: .leading, spacing: 4) {
-                Text("文件夹路径：")
+                Text(L10n.tr("文件夹路径：", "Folder Path:"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
@@ -103,7 +103,7 @@ public struct LocalLocationEditDialog: View {
 
                     Spacer()
 
-                    Button("选择文件夹…") {
+                    Button(L10n.tr("选择文件夹…", "Choose Folder…")) {
                         chooseFolder()
                     }
                     .buttonStyle(.bordered)
@@ -121,11 +121,11 @@ public struct LocalLocationEditDialog: View {
 
             // 位置名称输入框
             VStack(alignment: .leading, spacing: 6) {
-                Text("显示名称：")
+                Text(L10n.tr("显示名称：", "Display Name:"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
-                TextField("例如：开发工程、下载暂存", text: $name)
+                TextField(L10n.tr("例如：开发工程、下载暂存", "e.g. Workspace, Downloads"), text: $name)
                     .textFieldStyle(.roundedBorder)
                     .font(FerryFont.body)
                     .focused($isFieldFocused)
@@ -136,7 +136,7 @@ public struct LocalLocationEditDialog: View {
 
             // 图标选择器
             VStack(alignment: .leading, spacing: 6) {
-                Text("选择图标：")
+                Text(L10n.tr("选择图标：", "Choose Icon:"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
@@ -165,14 +165,14 @@ public struct LocalLocationEditDialog: View {
 
             // 底部按钮组
             HStack {
-                Button("取消") {
+                Button(L10n.tr("取消", "Cancel")) {
                     isPresented = false
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
-                Button(isEditing ? "保存" : "添加") {
+                Button(isEditing ? L10n.tr("保存", "Save") : L10n.tr("添加", "Add")) {
                     save()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -198,7 +198,7 @@ public struct LocalLocationEditDialog: View {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
-        panel.prompt = "选择"
+        panel.prompt = L10n.tr("选择", "Select")
         panel.directoryURL = selectedURL
         if panel.runModal() == .OK, let url = panel.url {
             selectedURL = url

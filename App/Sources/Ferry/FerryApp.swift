@@ -13,7 +13,7 @@ public struct FerryApp: App {
         .commands {
             SidebarCommands()
             CommandGroup(replacing: .appInfo) {
-                Button("关于 Ferry") {
+                Button(L10n.tr("关于 Ferry", "About Ferry")) {
                     NSApplication.shared.orderFrontStandardAboutPanel(
                         options: [
                             NSApplication.AboutPanelOptionKey(rawValue: "Copyright"): "Copyright © 2026 Johnny Boy Studio. All rights reserved.",
@@ -21,7 +21,10 @@ public struct FerryApp: App {
                             NSApplication.AboutPanelOptionKey.applicationVersion: "1.0.0-beta.1",
                             NSApplication.AboutPanelOptionKey.version: "100",
                             NSApplication.AboutPanelOptionKey.credits: NSAttributedString(
-                                string: "专为 macOS 设计的现代化、高韧性 SFTP / FTP / FTPS 双栏文件传输客户端\n遵循 MIT 协议开源",
+                                string: L10n.tr(
+                                    "专为 macOS 设计的现代化、高韧性 SFTP / FTP / FTPS 双栏文件传输客户端\n遵循 MIT 协议开源",
+                                    "Modern, resilient dual-pane SFTP / FTP / FTPS file transfer client for macOS\nOpen source under MIT License"
+                                ),
                                 attributes: [
                                     .font: NSFont.systemFont(ofSize: 11),
                                     .foregroundColor: NSColor.secondaryLabelColor
@@ -32,52 +35,63 @@ public struct FerryApp: App {
                 }
             }
             CommandGroup(replacing: .newItem) {
-                Button("新建连接…") {
+                Button(L10n.tr("新建连接…", "New Connection…")) {
                     NotificationCenter.default.post(name: .ferryOpenNewConnection, object: nil)
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }
             CommandGroup(after: .appSettings) {
-                Button("偏好设置与导入…") {
+                Button(L10n.tr("偏好设置与导入…", "Preferences & Import…")) {
                     NotificationCenter.default.post(name: .ferryOpenPreferences, object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
             }
-            CommandMenu("导航") {
-                Button("前往文件夹…") {
+            CommandMenu(L10n.tr("导航", "Navigate")) {
+                Button(L10n.tr("前往文件夹…", "Go to Folder…")) {
                     NotificationCenter.default.post(name: .ferryOpenGoToFolder, object: nil)
                 }
                 .keyboardShortcut("g", modifiers: [.command, .shift])
 
-                Button("切换显示隐藏文件") {
+                Button(L10n.tr("切换显示隐藏文件", "Toggle Hidden Files")) {
                     NotificationCenter.default.post(name: .ferryToggleHiddenFiles, object: nil)
                 }
                 .keyboardShortcut(".", modifiers: [.command, .shift])
             }
-            CommandMenu("视图") {
-                Button("切换传输队列面板") {
+            CommandMenu(L10n.tr("视图", "View")) {
+                Button(L10n.tr("切换传输队列面板", "Toggle Transfer Queue Panel")) {
                     NotificationCenter.default.post(name: .ferryToggleTransferQueue, object: nil)
                 }
                 .keyboardShortcut("j", modifiers: .command)
             }
+            CommandMenu(L10n.tr("语言", "Language")) {
+                Button(L10n.tr("跟随系统", "System Default")) {
+                    LanguageManager.shared.currentLanguage = .system
+                }
+                Button("简体中文 (Simplified Chinese)") {
+                    LanguageManager.shared.currentLanguage = .zh
+                }
+                Button("English") {
+                    LanguageManager.shared.currentLanguage = .en
+                }
+            }
             CommandGroup(replacing: .help) {
-                Button("Ferry 帮助与使用指南") {
+                Button(L10n.tr("Ferry 帮助与使用指南", "Ferry Help & User Guide")) {
                     NotificationCenter.default.post(name: .ferryOpenHelp, object: nil)
                 }
                 .keyboardShortcut("?", modifiers: .command)
 
-                Button("键盘快捷键速查") {
+                Button(L10n.tr("键盘快捷键速查", "Keyboard Shortcuts")) {
                     NotificationCenter.default.post(name: .ferryOpenShortcuts, object: nil)
                 }
                 .keyboardShortcut("/", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("导出脱敏诊断报告…") {
+                Button(L10n.tr("导出脱敏诊断报告…", "Export Sanitized Diagnostic Report…")) {
                     NotificationCenter.default.post(name: .ferryExportDiagnosticReport, object: nil)
                 }
 
-                Button("访问 GitHub 开源仓库") {
+                Button(L10n.tr("访问 GitHub 开源仓库", "Visit GitHub Repository")) {
                     if let url = URL(string: "https://github.com/yifanwang/Ferry") {
                         NSWorkspace.shared.open(url)
                     }

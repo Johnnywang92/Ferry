@@ -12,17 +12,18 @@ public enum ExternalEditStatus: Sendable, Equatable {
     case conflict(remoteDate: Date)
     case error(String)
 
+    @MainActor
     public var displayText: String {
         switch self {
-        case .monitoring: return "正在监视编辑器保存…"
-        case .hasChanges: return "检测到本地修改，待回传"
-        case .uploading: return "正在回传到远端…"
-        case .uploaded: return "已成功回传并同步"
+        case .monitoring: return L10n.tr("正在监视编辑器保存…", "Watching editor saves…")
+        case .hasChanges: return L10n.tr("检测到本地修改，待回传", "Local changes detected, pending upload")
+        case .uploading: return L10n.tr("正在回传到远端…", "Uploading to remote…")
+        case .uploaded: return L10n.tr("已成功回传并同步", "Uploaded and synced")
         case .conflict(let d):
             let f = DateFormatter()
             f.dateFormat = "HH:mm:ss"
-            return "冲突：远端已于 \(f.string(from: d)) 变更"
-        case .error(let msg): return "回传失败：\(msg)"
+            return L10n.format("冲突：远端已于 %@ 变更", "Conflict: remote changed at %@", f.string(from: d))
+        case .error(let msg): return L10n.format("回传失败：%@", "Upload failed: %@", msg)
         }
     }
 }

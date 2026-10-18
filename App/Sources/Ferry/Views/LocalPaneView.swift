@@ -66,7 +66,7 @@ public struct LocalPaneView: View {
             // 栏头：本地标签 + 路径栏 + 上一级 + 刷新
             HStack(spacing: 8) {
                 // `本地` 标签
-                Text("本地")
+                Text(L10n.tr("本地", "Local"))
                     .font(FerryFont.micro)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -76,7 +76,7 @@ public struct LocalPaneView: View {
 
                 // 路径栏（支持点击直接编辑跳转）
                 if isEditingPath {
-                    TextField("输入本地路径…", text: $editedPathText)
+                    TextField(L10n.tr("输入本地路径…", "Enter local path…"), text: $editedPathText)
                         .textFieldStyle(.plain)
                         .font(FerryFont.monoSmall)
                         .foregroundColor(theme.text)
@@ -116,7 +116,7 @@ public struct LocalPaneView: View {
                         editedPathText = currentURL.path
                         isEditingPath = true
                     }
-                    .help("点击直接输入本地路径，或按 ⌘⇧G 前往文件夹")
+                    .help(L10n.tr("点击直接输入本地路径，或按 ⌘⇧G 前往文件夹", "Click to enter path, or press ⌘⇧G to go to folder"))
                 }
 
                 // 返回上一级
@@ -129,7 +129,7 @@ public struct LocalPaneView: View {
                         .cornerRadius(FerryRadius.r4)
                 }
                 .buttonStyle(.plain)
-                .help("上一级")
+                .help(L10n.tr("上一级", "Parent Folder"))
                 .disabled(currentURL.path == "/")
 
                 // 刷新
@@ -142,7 +142,7 @@ public struct LocalPaneView: View {
                         .cornerRadius(FerryRadius.r4)
                 }
                 .buttonStyle(.plain)
-                .help("刷新本地目录")
+                .help(L10n.tr("刷新本地目录", "Refresh Local Directory"))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -156,14 +156,14 @@ public struct LocalPaneView: View {
 
             // 表头：名称 / 修改时间 / 大小（支持点击排序）
             HStack(spacing: 0) {
-                columnHeader(title: "名称", field: .name, alignment: .leading)
+                columnHeader(title: L10n.tr("名称", "Name"), field: .name, alignment: .leading)
                     .padding(.leading, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                columnHeader(title: "修改时间", field: .modificationDate, alignment: .leading)
+                columnHeader(title: L10n.tr("修改时间", "Date Modified"), field: .modificationDate, alignment: .leading)
                     .frame(width: 130, alignment: .leading)
 
-                columnHeader(title: "大小", field: .size, alignment: .trailing)
+                columnHeader(title: L10n.tr("大小", "Size"), field: .size, alignment: .trailing)
                     .frame(width: 80, alignment: .trailing)
                     .padding(.trailing, 12)
             }
@@ -207,13 +207,13 @@ public struct LocalPaneView: View {
                         : nil
                 )
                 .contextMenu {
-                    Button("新建本地文件夹…") {
+                    Button(L10n.tr("新建本地文件夹…", "New Local Folder…")) {
                         onNewLocalFolder()
                     }
-                    Button(themeManager.showHiddenFiles ? "隐藏以 . 开头的隐藏文件" : "显示隐藏文件") {
+                    Button(themeManager.showHiddenFiles ? L10n.tr("隐藏以 . 开头的隐藏文件", "Hide Hidden Files") : L10n.tr("显示隐藏文件", "Show Hidden Files")) {
                         themeManager.toggleHiddenFiles()
                     }
-                    Button("刷新") {
+                    Button(L10n.tr("刷新", "Refresh")) {
                         loadDirectory()
                     }
                 }
@@ -230,17 +230,17 @@ public struct LocalPaneView: View {
             loadDirectory()
         }
         .alert(
-            itemToDelete?.isDirectory == true ? "删除本地文件夹" : "删除本地文件",
+            itemToDelete?.isDirectory == true ? L10n.tr("删除本地文件夹", "Delete Local Folder") : L10n.tr("删除本地文件", "Delete Local File"),
             isPresented: Binding(
                 get: { itemToDelete != nil },
                 set: { if !$0 { itemToDelete = nil } }
             ),
             presenting: itemToDelete
         ) { item in
-            Button("取消", role: .cancel) {
+            Button(L10n.tr("取消", "Cancel"), role: .cancel) {
                 itemToDelete = nil
             }
-            Button("移到废纸篓", role: .destructive) {
+            Button(L10n.tr("移到废纸篓", "Move to Trash"), role: .destructive) {
                 do {
                     try LocalFileSystemService.shared.deleteItem(at: item.url)
                     selectedIDs.remove(item.id)
@@ -251,7 +251,7 @@ public struct LocalPaneView: View {
                 itemToDelete = nil
             }
         } message: { item in
-            Text("确定要将“\(item.name)”移到废纸篓吗？")
+            Text(L10n.format("确定要将“%@”移到废纸篓吗？", "Are you sure you want to move \"%@\" to Trash?", item.name))
         }
     }
 
@@ -334,39 +334,39 @@ public struct LocalPaneView: View {
             }
         )
         .contextMenu {
-            Button(item.isDirectory ? "上传文件夹到当前远端目录" : "上传到当前远端目录") {
+            Button(item.isDirectory ? L10n.tr("上传文件夹到当前远端目录", "Upload Folder to Remote") : L10n.tr("上传到当前远端目录", "Upload to Remote")) {
                 selectedIDs = [item.id]
                 onUploadSelected()
             }
             if !item.isDirectory {
-                Button("快速预览 (Quick Look)") {
+                Button(L10n.tr("快速预览 (Quick Look)", "Quick Look")) {
                     QuickLookService.shared.togglePreview(localURL: item.url)
                 }
             }
             if item.isDirectory {
-                Button("打开文件夹") {
+                Button(L10n.tr("打开文件夹", "Open Folder")) {
                     currentURL = item.url
                     selectedIDs.removeAll()
                 }
             }
             Divider()
-            Button("重命名…") {
+            Button(L10n.tr("重命名…", "Rename…")) {
                 onRenameLocal(item)
             }
             Button(role: .destructive) {
                 itemToDelete = item
             } label: {
-                Text(item.isDirectory ? "删除文件夹…" : "删除文件…")
+                Text(item.isDirectory ? L10n.tr("删除文件夹…", "Delete Folder…") : L10n.tr("删除文件…", "Delete File…"))
             }
-            Button("在访达中显示") {
+            Button(L10n.tr("在访达中显示", "Show in Finder")) {
                 NSWorkspace.shared.activateFileViewerSelecting([item.url])
             }
-            Button("复制本地路径") {
+            Button(L10n.tr("复制本地路径", "Copy Local Path")) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(item.url.path, forType: .string)
             }
             Divider()
-            Button("新建本地文件夹…") {
+            Button(L10n.tr("新建本地文件夹…", "New Local Folder…")) {
                 onNewLocalFolder()
             }
         }

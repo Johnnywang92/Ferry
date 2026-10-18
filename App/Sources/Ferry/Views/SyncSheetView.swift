@@ -42,6 +42,15 @@ public struct SyncSheetView: View {
         case actionableOnly = "仅需操作"
         case conflictsOnly = "仅冲突"
         public var id: String { rawValue }
+
+        @MainActor
+        public var displayName: String {
+            switch self {
+            case .all: return L10n.tr("全部", "All")
+            case .actionableOnly: return L10n.tr("仅需操作", "Actionable")
+            case .conflictsOnly: return L10n.tr("仅冲突", "Conflicts")
+            }
+        }
     }
 
     public init(
@@ -76,7 +85,7 @@ public struct SyncSheetView: View {
                     VStack(spacing: 12) {
                         ProgressView()
                             .controlSize(.regular)
-                        Text("正在扫描目录并比对差异 (DiffPlan)...")
+                        Text(L10n.tr("正在扫描目录并比对差异 (DiffPlan)...", "Scanning directories and computing DiffPlan..."))
                             .font(FerryFont.caption)
                             .foregroundColor(theme.text2)
                     }
@@ -86,7 +95,7 @@ public struct SyncSheetView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 32))
                             .foregroundColor(theme.errorRed)
-                        Text("分析失败")
+                        Text(L10n.tr("分析失败", "Analysis Failed"))
                             .font(FerryFont.bodyBold)
                             .foregroundColor(theme.text)
                         Text(error)
@@ -94,7 +103,7 @@ public struct SyncSheetView: View {
                             .foregroundColor(theme.text2)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 32)
-                        Button("重试") {
+                        Button(L10n.tr("重试", "Retry")) {
                             runAnalysis()
                         }
                         .buttonStyle(.bordered)
@@ -107,7 +116,7 @@ public struct SyncSheetView: View {
                             Image(systemName: "checkmark.circle")
                                 .font(.system(size: 32))
                                 .foregroundColor(theme.successGreen)
-                            Text("本地与远端完全一致，无需同步。")
+                            Text(L10n.tr("本地与远端完全一致，无需同步。", "Local and remote are in sync, no actions needed."))
                                 .font(FerryFont.body)
                                 .foregroundColor(theme.text2)
                         }
@@ -129,16 +138,16 @@ public struct SyncSheetView: View {
         .onAppear {
             runAnalysis()
         }
-        .alert("开启删除操作确认", isPresented: $showDeleteConfirmation) {
-            Button("确认开启", role: .destructive) {
+        .alert(L10n.tr("开启删除操作确认", "Confirm Enable Deletion"), isPresented: $showDeleteConfirmation) {
+            Button(L10n.tr("确认开启", "Enable Deletion"), role: .destructive) {
                 allowDeletions = true
                 runAnalysis()
             }
-            Button("取消", role: .cancel) {
+            Button(L10n.tr("取消", "Cancel"), role: .cancel) {
                 allowDeletions = false
             }
         } message: {
-            Text("同步删除将在目标端永久删除本地或服务器上已移除的文件。\n建议先在无删除模式下复核 DiffPlan。确定开启吗？")
+            Text(L10n.tr("同步删除将在目标端永久删除本地或服务器上已移除的文件。\n建议先在无删除模式下复核 DiffPlan。确定开启吗？", "Sync deletion will permanently remove files on the target that were deleted locally or on the server.\nIt is recommended to review the DiffPlan without deletion first. Are you sure?"))
         }
     }
 
@@ -147,7 +156,7 @@ public struct SyncSheetView: View {
     private var headerView: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("文件夹双向同步 (DiffPlan)")
+                Text(L10n.tr("文件夹双向同步 (DiffPlan)", "Folder Two-way Sync (DiffPlan)"))
                     .font(FerryFont.titleBold)
                     .foregroundColor(theme.text)
 
@@ -163,7 +172,7 @@ public struct SyncSheetView: View {
 
             HStack(spacing: 12) {
                 HStack(spacing: 4) {
-                    Text("本地:")
+                    Text(L10n.tr("本地:", "Local:"))
                         .font(FerryFont.captionBold)
                         .foregroundColor(theme.text2)
                     Text(localURL.path)
@@ -178,7 +187,7 @@ public struct SyncSheetView: View {
                     .foregroundColor(theme.text3)
 
                 HStack(spacing: 4) {
-                    Text("远程:")
+                    Text(L10n.tr("远程:", "Remote:"))
                         .font(FerryFont.captionBold)
                         .foregroundColor(theme.text2)
                     Text(remotePath.displayString())
@@ -199,11 +208,11 @@ public struct SyncSheetView: View {
             // 统计胶囊
             if let plan = diffPlan {
                 HStack(spacing: 8) {
-                    badgeView(title: "上行", count: plan.uploadCount, color: theme.successGreen)
-                    badgeView(title: "下行", count: plan.downloadCount, color: theme.accentColor)
-                    badgeView(title: "删除", count: plan.deleteRemoteCount + plan.deleteLocalCount, color: theme.errorRed)
-                    badgeView(title: "冲突", count: plan.conflictCount, color: theme.warningOrange)
-                    badgeView(title: "相同", count: plan.unchangedCount, color: theme.text3)
+                    badgeView(title: L10n.tr("上行", "Upload"), count: plan.uploadCount, color: theme.successGreen)
+                    badgeView(title: L10n.tr("下行", "Download"), count: plan.downloadCount, color: theme.accentColor)
+                    badgeView(title: L10n.tr("删除", "Delete"), count: plan.deleteRemoteCount + plan.deleteLocalCount, color: theme.errorRed)
+                    badgeView(title: L10n.tr("冲突", "Conflict"), count: plan.conflictCount, color: theme.warningOrange)
+                    badgeView(title: L10n.tr("相同", "Unchanged"), count: plan.unchangedCount, color: theme.text3)
                 }
             }
 
@@ -212,14 +221,14 @@ public struct SyncSheetView: View {
             // 过滤分段
             Picker("", selection: $filterMode) {
                 ForEach(FilterMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
+                    Text(mode.displayName).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
             .frame(width: 200)
 
             // 选项开关
-            Toggle("允许删除", isOn: Binding(
+            Toggle(L10n.tr("允许删除", "Allow Deletion"), isOn: Binding(
                 get: { allowDeletions },
                 set: { val in
                     if val {
@@ -233,7 +242,7 @@ public struct SyncSheetView: View {
             .font(FerryFont.caption)
             .toggleStyle(.checkbox)
 
-            Toggle("强验内容哈希", isOn: $forceCompareHash)
+            Toggle(L10n.tr("强验内容哈希", "Verify Content Hash"), isOn: $forceCompareHash)
                 .font(FerryFont.caption)
                 .toggleStyle(.checkbox)
                 .onChange(of: forceCompareHash) { _, _ in
@@ -244,7 +253,7 @@ public struct SyncSheetView: View {
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 12))
             }
-            .help("重新分析")
+            .help(L10n.tr("重新分析", "Re-analyze"))
             .disabled(isAnalyzing || isExecuting)
         }
         .padding(.horizontal, 20)
@@ -272,27 +281,27 @@ public struct SyncSheetView: View {
             LazyVStack(spacing: 0) {
                 // 表头
                 HStack(spacing: 12) {
-                    Text("建议操作")
+                    Text(L10n.tr("建议操作", "Action"))
                         .font(FerryFont.captionBold)
                         .foregroundColor(theme.text2)
                         .frame(width: 100, alignment: .leading)
 
-                    Text("相对路径")
+                    Text(L10n.tr("相对路径", "Relative Path"))
                         .font(FerryFont.captionBold)
                         .foregroundColor(theme.text2)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Text("本地")
+                    Text(L10n.tr("本地", "Local"))
                         .font(FerryFont.captionBold)
                         .foregroundColor(theme.text2)
                         .frame(width: 140, alignment: .trailing)
 
-                    Text("远程")
+                    Text(L10n.tr("远程", "Remote"))
                         .font(FerryFont.captionBold)
                         .foregroundColor(theme.text2)
                         .frame(width: 140, alignment: .trailing)
 
-                    Text("冲突解决")
+                    Text(L10n.tr("冲突解决", "Resolution"))
                         .font(FerryFont.captionBold)
                         .foregroundColor(theme.text2)
                         .frame(width: 120, alignment: .leading)
@@ -341,7 +350,7 @@ public struct SyncSheetView: View {
                     set: { resolvedItems[item.relativePath] = $0 }
                 )) {
                     ForEach(SyncConflictResolution.allCases, id: \.self) { res in
-                        Text(res.rawValue).tag(res)
+                        Text(conflictResolutionName(res)).tag(res)
                     }
                 }
                 .pickerStyle(.menu)
@@ -358,31 +367,40 @@ public struct SyncSheetView: View {
         .background(item.action == .conflict ? theme.warningOrange.opacity(0.08) : Color.clear)
     }
 
+    private func conflictResolutionName(_ res: SyncConflictResolution) -> String {
+        switch res {
+        case .useLocal: return L10n.tr("以本地为准", "Use Local")
+        case .useRemote: return L10n.tr("以远端为准", "Use Remote")
+        case .keepBoth: return L10n.tr("保留双份", "Keep Both")
+        case .skip: return L10n.tr("跳过此项", "Skip")
+        }
+    }
+
     private func actionBadge(for item: SyncDiffItem) -> some View {
         let text: String
         let color: Color
 
         switch item.action {
         case .none:
-            text = "— 相同"
+            text = L10n.tr("— 相同", "— In Sync")
             color = theme.text3
         case .upload:
-            text = "↑ 上传"
+            text = L10n.tr("↑ 上传", "↑ Upload")
             color = theme.successGreen
         case .download:
-            text = "↓ 下载"
+            text = L10n.tr("↓ 下载", "↓ Download")
             color = theme.accentColor
         case .deleteRemote:
-            text = "✕ 删远端"
+            text = L10n.tr("✕ 删远端", "✕ Del Remote")
             color = theme.errorRed
         case .deleteLocal:
-            text = "✕ 删本地"
+            text = L10n.tr("✕ 删本地", "✕ Del Local")
             color = theme.errorRed
         case .conflict:
-            text = "⚠️ 冲突"
+            text = L10n.tr("⚠️ 冲突", "⚠️ Conflict")
             color = theme.warningOrange
         case .needsVerification:
-            text = "? 待比对"
+            text = L10n.tr("? 待比对", "? Needs Check")
             color = theme.warningOrange
         }
 
@@ -409,7 +427,7 @@ public struct SyncSheetView: View {
                     }
                 }
             } else {
-                Text("(不存在)")
+                Text(L10n.tr("(不存在)", "(None)"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text3)
             }
@@ -418,14 +436,14 @@ public struct SyncSheetView: View {
 
     private var footerView: some View {
         HStack {
-            Button("导出 DiffPlan JSON…") {
+            Button(L10n.tr("导出 DiffPlan JSON…", "Export DiffPlan JSON…")) {
                 exportDiffPlanJSON()
             }
             .disabled(diffPlan == nil || isAnalyzing || isExecuting)
 
             Spacer()
 
-            Button("取消") {
+            Button(L10n.tr("取消", "Cancel")) {
                 isPresented = false
             }
             .keyboardShortcut(.cancelAction)
@@ -434,10 +452,10 @@ public struct SyncSheetView: View {
                 if isExecuting {
                     ProgressView().controlSize(.small)
                         .padding(.trailing, 4)
-                    Text("正在派发同步任务…")
+                    Text(L10n.tr("正在派发同步任务…", "Dispatching sync tasks…"))
                 } else {
                     let actionable = actionableCount
-                    Text(actionable > 0 ? "开始同步 (\(actionable) 项)" : "开始同步")
+                    Text(actionable > 0 ? L10n.format("开始同步 (%d 项)", "Start Sync (%d items)", actionable) : L10n.tr("开始同步", "Start Sync"))
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -532,7 +550,7 @@ public struct SyncSheetView: View {
             if let data = try? encoder.encode(plan) {
                 try? data.write(to: url)
                 withAnimation {
-                    exportNotification = "DiffPlan 已导出"
+                    exportNotification = L10n.tr("DiffPlan 已导出", "DiffPlan exported")
                 }
             }
         }

@@ -8,6 +8,7 @@ public struct PreferencesSheetView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     private var themeManager: ThemeManager { ThemeManager.shared }
+    private var languageManager: LanguageManager { LanguageManager.shared }
     private var siteStore: SiteStore { SiteStore.shared }
 
     @State private var sshEntries: [SSHHostEntry] = []
@@ -26,11 +27,11 @@ public struct PreferencesSheetView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("偏好设置与导入")
+                Text(L10n.tr("偏好设置与导入", "Preferences & Imports"))
                     .font(FerryFont.bodyBold)
                     .foregroundColor(theme.text)
                 Spacer()
-                Button("完成") {
+                Button(L10n.tr("完成", "Done")) {
                     isPresented = false
                 }
                 .keyboardShortcut(.defaultAction)
@@ -44,28 +45,45 @@ public struct PreferencesSheetView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    // 1. 外观与强调色（ADR-0000 D5 / D6）
+                    // 1. 外观、语言与强调色（ADR-0000 D5 / D6）
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("外观与主题（即时生效）")
+                        Text(L10n.tr("外观与语言（即时生效）", "Appearance & Language"))
                             .font(FerryFont.subheadlineBold)
                             .foregroundColor(theme.text)
 
+                        // 界面语言
                         HStack {
-                            Text("外观模式")
+                            Text(L10n.tr("界面语言", "Language"))
+                                .font(FerryFont.captionMedium)
+                                .foregroundColor(theme.text2)
+                                .frame(width: 90, alignment: .leading)
+
+                            Picker("", selection: Bindable(languageManager).currentLanguage) {
+                                ForEach(AppLanguage.allCases) { lang in
+                                    Text(lang.displayName).tag(lang)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        }
+
+                        // 外观模式
+                        HStack {
+                            Text(L10n.tr("外观模式", "Appearance"))
                                 .font(FerryFont.captionMedium)
                                 .foregroundColor(theme.text2)
                                 .frame(width: 90, alignment: .leading)
 
                             Picker("", selection: Bindable(themeManager).appearanceMode) {
                                 ForEach(FerryAppearanceMode.allCases) { mode in
-                                    Text(mode.rawValue).tag(mode)
+                                    Text(mode.displayName).tag(mode)
                                 }
                             }
                             .pickerStyle(.segmented)
                         }
 
+                        // 强调色
                         HStack {
-                            Text("强调色")
+                            Text(L10n.tr("强调色", "Accent Color"))
                                 .font(FerryFont.captionMedium)
                                 .foregroundColor(theme.text2)
                                 .frame(width: 90, alignment: .leading)
@@ -99,7 +117,7 @@ public struct PreferencesSheetView: View {
                             }
                         }
 
-                        Toggle("显示以 `.` 开头的隐藏文件（快捷键 ⌘⇧.）", isOn: Bindable(themeManager).showHiddenFiles)
+                        Toggle(L10n.tr("显示以 `.` 开头的隐藏文件（快捷键 ⌘⇧.）", "Show hidden files starting with `.` (⌘⇧.)"), isOn: Bindable(themeManager).showHiddenFiles)
                             .font(FerryFont.subheadline)
                             .foregroundColor(theme.text)
                             .toggleStyle(.checkbox)
@@ -112,23 +130,23 @@ public struct PreferencesSheetView: View {
                     // 2. ~/.ssh/config 站点导入（M2 交付）
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("从 ~/.ssh/config 导入站点")
+                            Text(L10n.tr("从 ~/.ssh/config 导入站点", "Import Sites from ~/.ssh/config"))
                                 .font(FerryFont.subheadlineBold)
                                 .foregroundColor(theme.text)
                             Spacer()
-                            Button("选择其他配置文件…") {
+                            Button(L10n.tr("选择其他配置文件…", "Choose Other Config…")) {
                                 pickCustomSSHConfig()
                             }
                             .font(FerryFont.caption)
 
-                            Button("重新扫描 ~/.ssh/config") {
+                            Button(L10n.tr("重新扫描 ~/.ssh/config", "Rescan ~/.ssh/config")) {
                                 scanDefaultSSHConfig()
                             }
                             .font(FerryFont.caption)
                         }
 
                         if sshEntries.isEmpty {
-                            Text(sshStatusMessage ?? "未在 ~/.ssh/config 中发现可导入的具体 Host 条目。")
+                            Text(sshStatusMessage ?? L10n.tr("未在 ~/.ssh/config 中发现可导入的具体 Host 条目。", "No importable Host entries found in ~/.ssh/config."))
                                 .font(FerryFont.caption)
                                 .foregroundColor(theme.text3)
                         } else {
@@ -154,7 +172,7 @@ public struct PreferencesSheetView: View {
                                             .foregroundColor(theme.text2)
 
                                         if entry.prefersWeakAlgorithms {
-                                            Text("老算法")
+                                            Text(L10n.tr("老算法", "Legacy"))
                                                 .font(FerryFont.micro)
                                                 .padding(.horizontal, 4)
                                                 .padding(.vertical, 1)
@@ -164,7 +182,7 @@ public struct PreferencesSheetView: View {
                                         }
 
                                         if let jump = entry.proxyJump {
-                                            Text("ProxyJump: \(jump)（v1.1+ 支持）")
+                                            Text("ProxyJump: \(jump)（v1.1+）")
                                                 .font(FerryFont.micro)
                                                 .padding(.horizontal, 4)
                                                 .padding(.vertical, 1)
@@ -184,7 +202,7 @@ public struct PreferencesSheetView: View {
                                             .foregroundColor(theme.text2)
                                     }
                                     Spacer()
-                                    Button("导入所选 (\(selectedAliases.count))") {
+                                    Button(L10n.format("导入所选 (%d)", "Import Selected (%d)", selectedAliases.count)) {
                                         let chosen = sshEntries.filter { selectedAliases.contains($0.alias) }
                                         Task {
                                             _ = await siteStore.importSSHConfigEntries(chosen)
@@ -203,11 +221,11 @@ public struct PreferencesSheetView: View {
                     // 3. 已知主机库（TOFU + ~/.ssh/known_hosts）
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Text("主机密钥信任库（TOFU & ~/.ssh/known_hosts）")
+                            Text(L10n.tr("主机密钥信任库（TOFU & ~/.ssh/known_hosts）", "Host Key Trust (TOFU & ~/.ssh/known_hosts)"))
                                 .font(FerryFont.subheadlineBold)
                                 .foregroundColor(theme.text)
                             Spacer()
-                            Button("清空 Ferry 自建信任记录") {
+                            Button(L10n.tr("清空 Ferry 自建信任记录", "Clear Ferry Trust Records")) {
                                 try? FileManager.default.removeItem(at: ConnectionService.ferryKnownHostsURL)
                                 refreshKnownHostsSummary()
                             }
@@ -225,11 +243,11 @@ public struct PreferencesSheetView: View {
                     // 4. 自动更新（M6 Sparkle 集成，v2.3 §524）
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("软件更新")
+                            Text(L10n.tr("软件更新", "Software Update"))
                                 .font(FerryFont.subheadlineBold)
                                 .foregroundColor(theme.text)
                             Spacer()
-                            Button("检查更新…") {
+                            Button(L10n.tr("检查更新…", "Check for Updates…")) {
                                 Task {
                                     await UpdaterService.shared.checkForUpdates()
                                 }
@@ -238,7 +256,7 @@ public struct PreferencesSheetView: View {
                         }
 
                         HStack {
-                            Toggle("自动检查更新", isOn: Bindable(UpdaterService.shared).isAutoCheckEnabled)
+                            Toggle(L10n.tr("自动检查更新", "Automatically check for updates"), isOn: Bindable(UpdaterService.shared).isAutoCheckEnabled)
                                 .font(FerryFont.subheadline)
                                 .foregroundColor(theme.text)
                                 .toggleStyle(.checkbox)
@@ -260,15 +278,15 @@ public struct PreferencesSheetView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("诊断报告与故障排查")
+                                Text(L10n.tr("诊断报告与故障排查", "Diagnostic Report & Troubleshooting"))
                                     .font(FerryFont.subheadlineBold)
                                     .foregroundColor(theme.text)
-                                Text("导出包含系统环境、连接状态（已脱敏密码/私钥）、队列状况与错误码建议的 JSON 报告。")
+                                Text(L10n.tr("导出包含系统环境、连接状态（已脱敏密码/私钥）、队列状况与错误码建议的 JSON 报告。", "Export a sanitized JSON report containing system environment, connection state, queue status, and advice."))
                                     .font(FerryFont.caption)
                                     .foregroundColor(theme.text3)
                             }
                             Spacer()
-                            Button("导出诊断报告…") {
+                            Button(L10n.tr("导出诊断报告…", "Export Diagnostic Report…")) {
                                 exportDiagnosticReport()
                             }
                         }

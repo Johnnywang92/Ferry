@@ -7,6 +7,15 @@ public enum FerryAppearanceMode: String, CaseIterable, Identifiable, Sendable {
     case dark = "深色模式"
 
     public var id: String { rawValue }
+
+    @MainActor
+    public var displayName: String {
+        switch self {
+        case .auto: return L10n.tr("跟随系统", "System")
+        case .light: return L10n.tr("浅色模式", "Light")
+        case .dark: return L10n.tr("深色模式", "Dark")
+        }
+    }
 }
 
 @Observable

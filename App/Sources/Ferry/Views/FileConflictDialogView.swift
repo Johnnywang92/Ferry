@@ -44,27 +44,27 @@ public struct FileConflictDialogView: View {
     }
 
     private var targetLocationName: String {
-        isUpload ? "远程" : "本地"
+        isUpload ? L10n.tr("远程", "Remote") : L10n.tr("本地", "Local")
     }
 
     private var sourceLocationName: String {
-        isUpload ? "本地" : "远程"
+        isUpload ? L10n.tr("本地", "Local") : L10n.tr("远程", "Remote")
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // 标题与说明（UI-REFERENCE.md §5）
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(targetLocationName)已存在\"\(conflict.fileName)\"")
+                Text(L10n.format("\"%@\" 已在 %@ 存在", "\"%@\" already exists on %@", conflict.fileName, targetLocationName))
                     .font(FerryFont.titleBold)
                     .foregroundColor(theme.text)
 
                 let desc: String = {
-                    let action = isUpload ? "上传" : "下载"
+                    let action = isUpload ? L10n.tr("上传", "Upload") : L10n.tr("下载", "Download")
                     if totalConflicts > 1 {
-                        return "\(action)会遇到同名文件。请选择如何处理，这次传输共有 \(totalConflicts) 个冲突。"
+                        return L10n.format("%@会遇到同名文件。请选择如何处理，这次传输共有 %d 个冲突。", "%@ encountered an existing file. Please choose how to proceed (%d conflicts in total).", action, totalConflicts)
                     } else {
-                        return "\(action)会遇到同名文件。请选择如何处理。"
+                        return L10n.format("%@会遇到同名文件。请选择如何处理。", "%@ encountered an existing file. Please choose how to proceed.", action)
                     }
                 }()
 
@@ -78,12 +78,12 @@ public struct FileConflictDialogView: View {
                 // 源方卡片
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("\(sourceLocationName)（要\(isUpload ? "上传" : "下载")的）")
+                        Text(L10n.format("%@（要%@的）", "%@ (to %@)", sourceLocationName, isUpload ? L10n.tr("上传", "upload") : L10n.tr("下载", "download")))
                             .font(FerryFont.captionMedium)
                             .foregroundColor(theme.text2)
                         Spacer()
                         if conflict.isSourceNewer {
-                            Text("较新")
+                            Text(L10n.tr("较新", "Newer"))
                                 .font(FerryFont.micro)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -113,12 +113,12 @@ public struct FileConflictDialogView: View {
                 // 目标方卡片
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("\(targetLocationName)（\(isUpload ? "服务器" : "本地磁盘")上的）")
+                        Text(L10n.format("%@（%@上的）", "%@ (on %@)", targetLocationName, isUpload ? L10n.tr("服务器", "server") : L10n.tr("本地磁盘", "local disk")))
                             .font(FerryFont.captionMedium)
                             .foregroundColor(theme.text2)
                         Spacer()
                         if !conflict.isSourceNewer && conflict.sourceDate != nil && conflict.destinationDate != nil && conflict.sourceDate! < conflict.destinationDate! {
-                            Text("较新")
+                            Text(L10n.tr("较新", "Newer"))
                                 .font(FerryFont.micro)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1.5)
@@ -152,23 +152,23 @@ public struct FileConflictDialogView: View {
             VStack(alignment: .leading, spacing: 10) {
                 strategyOption(
                     mode: .overwrite,
-                    title: "覆盖",
-                    subtitle: "用\(sourceLocationName)文件替换\(targetLocationName)文件"
+                    title: L10n.tr("覆盖", "Overwrite"),
+                    subtitle: L10n.format("用%@文件替换%@文件", "Replace %@ file with %@ file", targetLocationName, sourceLocationName)
                 )
 
                 strategyOption(
                     mode: .skip,
-                    title: "跳过",
-                    subtitle: "保留\(targetLocationName)文件，不\(isUpload ? "上传" : "下载")"
+                    title: L10n.tr("跳过", "Skip"),
+                    subtitle: L10n.format("保留%@文件，不%@", "Keep %@ file, do not %@", targetLocationName, isUpload ? L10n.tr("上传", "upload") : L10n.tr("下载", "download"))
                 )
 
                 strategyOption(
                     mode: .rename,
-                    title: "重命名",
-                    subtitle: "以新文件名保存"
+                    title: L10n.tr("重命名", "Rename"),
+                    subtitle: L10n.tr("以新文件名保存", "Save with a new file name")
                 ) {
                     if selectedMode == .rename {
-                        TextField("新文件名", text: $customRenameText)
+                        TextField(L10n.tr("新文件名", "New file name"), text: $customRenameText)
                             .textFieldStyle(.plain)
                             .font(FerryFont.monoSmall)
                             .foregroundColor(theme.text)
@@ -186,15 +186,15 @@ public struct FileConflictDialogView: View {
 
                 strategyOption(
                     mode: .overwriteIfNewer,
-                    title: "仅在较新时覆盖",
-                    subtitle: "\(sourceLocationName)文件更新才替换，否则跳过"
+                    title: L10n.tr("仅在较新时覆盖", "Overwrite if Newer"),
+                    subtitle: L10n.format("%@文件更新才替换，否则跳过", "Replace only if %@ file is newer, otherwise skip", sourceLocationName)
                 )
             }
 
             // 批量应用复选框
             if remainingConflicts > 0 {
                 Toggle(isOn: $applyToAll) {
-                    Text("对其余 \(remainingConflicts) 个冲突执行相同操作")
+                    Text(L10n.format("对其余 %d 个冲突执行相同操作", "Apply to remaining %d conflicts", remainingConflicts))
                         .font(FerryFont.captionMedium)
                         .foregroundColor(theme.text)
                 }
@@ -204,14 +204,14 @@ public struct FileConflictDialogView: View {
 
             // 底部操作按钮
             HStack {
-                Button("取消传输") {
+                Button(L10n.tr("取消传输", "Cancel Transfer")) {
                     onCancel()
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
-                Button("继续") {
+                Button(L10n.tr("继续", "Continue")) {
                     commitDecision()
                 }
                 .keyboardShortcut(.defaultAction)

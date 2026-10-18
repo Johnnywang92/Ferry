@@ -66,7 +66,7 @@ public struct MainWindowView: View {
                         .font(FerryFont.captionBold)
                         .foregroundColor(theme.accentColor)
                     Spacer()
-                    Text("请稍候，任务即将启动...")
+                    Text(L10n.tr("请稍候，任务即将启动...", "Please wait, task starting soon..."))
                         .font(FerryFont.caption)
                         .foregroundColor(theme.text2)
                 }
@@ -405,7 +405,7 @@ public struct MainWindowView: View {
 
             await MainActor.run {
                 let panel = NSSavePanel()
-                panel.title = "导出 Ferry 诊断报告"
+                panel.title = L10n.tr("导出 Ferry 诊断报告", "Export Ferry Diagnostic Report")
                 panel.nameFieldStringValue = "Ferry-Diagnostics-\(Int(Date().timeIntervalSince1970)).json"
                 panel.allowedContentTypes = [.json]
                 if panel.runModal() == .OK, let url = panel.url {

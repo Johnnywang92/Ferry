@@ -24,6 +24,16 @@ public enum SiteAuthType: String, CaseIterable, Codable, Identifiable, Sendable 
     case anonymous = "匿名"
 
     public var id: String { rawValue }
+
+    @MainActor
+    public var displayName: String {
+        switch self {
+        case .password: return L10n.tr("密码", "Password")
+        case .privateKey: return L10n.tr("SSH 密钥", "SSH Key")
+        case .sshAgent: return "ssh-agent"
+        case .anonymous: return L10n.tr("匿名", "Anonymous")
+        }
+    }
 }
 
 public struct SiteBookmark: Codable, Identifiable, Hashable, Sendable {

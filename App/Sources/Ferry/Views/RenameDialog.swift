@@ -97,7 +97,7 @@ public struct RenameDialog: View {
                 Image(systemName: target.isDirectory ? "folder" : "doc")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(theme.accentColor)
-                Text(target.isDirectory ? (target.isRemote ? "重命名远程文件夹" : "重命名本地文件夹") : (target.isRemote ? "重命名远程文件" : "重命名本地文件"))
+                Text(target.isDirectory ? (target.isRemote ? L10n.tr("重命名远程文件夹", "Rename Remote Folder") : L10n.tr("重命名本地文件夹", "Rename Local Folder")) : (target.isRemote ? L10n.tr("重命名远程文件", "Rename Remote File") : L10n.tr("重命名本地文件", "Rename Local File")))
                     .font(FerryFont.bodyBold)
                     .foregroundColor(theme.text)
                 Spacer()
@@ -105,7 +105,7 @@ public struct RenameDialog: View {
 
             // 所在位置展示卡片（防超长路径撑破布局）
             VStack(alignment: .leading, spacing: 4) {
-                Text("所在目录：")
+                Text(L10n.tr("所在目录：", "Directory:"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
@@ -134,11 +134,11 @@ public struct RenameDialog: View {
 
             // 新名称输入框
             VStack(alignment: .leading, spacing: 6) {
-                Text("新名称：")
+                Text(L10n.tr("新名称：", "New Name:"))
                     .font(FerryFont.caption)
                     .foregroundColor(theme.text2)
 
-                TextField("输入新名称", text: $newName)
+                TextField(L10n.tr("输入新名称", "Enter new name"), text: $newName)
                     .textFieldStyle(.roundedBorder)
                     .font(FerryFont.body)
                     .focused($isFieldFocused)
@@ -151,12 +151,12 @@ public struct RenameDialog: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 10))
                             .foregroundColor(theme.errorRed)
-                        Text("名称不能包含 “/”")
+                        Text(L10n.tr("名称不能包含 “/”", "Name cannot contain '/'"))
                             .font(FerryFont.caption)
                             .foregroundColor(theme.errorRed)
                     }
                 } else if !isNameChanged && !trimmedName.isEmpty {
-                    Text("名称未更改")
+                    Text(L10n.tr("名称未更改", "Name unchanged"))
                         .font(FerryFont.caption)
                         .foregroundColor(theme.text3)
                 }
@@ -177,7 +177,7 @@ public struct RenameDialog: View {
 
             // 操作按钮组
             HStack {
-                Button("取消") {
+                Button(L10n.tr("取消", "Cancel")) {
                     onDismiss()
                 }
                 .keyboardShortcut(.cancelAction)
@@ -185,7 +185,7 @@ public struct RenameDialog: View {
 
                 Spacer()
 
-                Button(isSubmitting ? "正在重命名..." : "重命名") {
+                Button(isSubmitting ? L10n.tr("正在重命名...", "Renaming...") : L10n.tr("重命名", "Rename")) {
                     submit()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -224,7 +224,7 @@ public struct RenameDialog: View {
                 if result.success {
                     onDismiss()
                 } else {
-                    errorMessage = result.error ?? "重命名失败"
+                    errorMessage = result.error ?? L10n.tr("重命名失败", "Rename failed")
                 }
             }
         }
