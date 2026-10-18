@@ -32,6 +32,9 @@ public struct TransferQueuePanelView: View {
     }
 
     private var summaryText: String {
+        if let prep = connectionService.transferPreparation {
+            return prep.statusMessage
+        }
         let summary = connectionService.queueSummary
         if summary.running == 0 && summary.failed == 0 && summary.pending == 0 {
             return connectionService.queueTasks.isEmpty ? "队列为空" : "全部传输已完成"
@@ -140,20 +143,68 @@ public struct TransferQueuePanelView: View {
                 alignment: .bottom
             )
 
+            // 队列非空时的准备中微提示条
+            if let prep = connectionService.transferPreparation, !filteredTasks.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(prep.statusMessage)
+                        .font(FerryFont.captionBold)
+                        .foregroundColor(theme.accentColor)
+                    Spacer()
+                    if prep.scannedFilesCount > 0 {
+                        Text("已扫描 \(prep.scannedFilesCount) 个文件")
+                            .font(FerryFont.monoCaption)
+                            .foregroundColor(theme.text2)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(theme.accentColor.opacity(0.08))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(theme.accentColor.opacity(0.2)),
+                    alignment: .bottom
+                )
+            }
+
             // 任务列表
             if filteredTasks.isEmpty {
-                VStack(spacing: 6) {
-                    Spacer()
-                    Image(systemName: "tray")
-                        .font(.system(size: 20))
-                        .foregroundColor(theme.text3)
-                    Text("暂无传输任务")
-                        .font(FerryFont.caption)
-                        .foregroundColor(theme.text3)
-                    Spacer()
+                if let prep = connectionService.transferPreparation {
+                    VStack(spacing: 10) {
+                        Spacer()
+                        ProgressView()
+                            .controlSize(.regular)
+                        Text(prep.statusMessage)
+                            .font(FerryFont.subheadlineBold)
+                            .foregroundColor(theme.text)
+                        if prep.scannedFilesCount > 0 {
+                            Text("已发现 \(prep.scannedFilesCount) 个文件，正在展开目录结构与比对冲突...")
+                                .font(FerryFont.caption)
+                                .foregroundColor(theme.text2)
+                        } else {
+                            Text("正在连接服务器并展开目标文件列表，请稍候...")
+                                .font(FerryFont.caption)
+                                .foregroundColor(theme.text2)
+                        }
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(theme.bg)
+                } else {
+                    VStack(spacing: 6) {
+                        Spacer()
+                        Image(systemName: "tray")
+                            .font(.system(size: 20))
+                            .foregroundColor(theme.text3)
+                        Text("暂无传输任务")
+                            .font(FerryFont.caption)
+                            .foregroundColor(theme.text3)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(theme.bg)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(theme.bg)
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {

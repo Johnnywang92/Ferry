@@ -38,12 +38,16 @@ public struct ToolbarView: View {
                 .background(theme.barLine)
 
             // 中间主要动作按钮组（上传 / 下载 / 新建文件夹 / 前往 / 隐藏文件 / 刷新 / 断开连接）
-            HStack(spacing: 4) {
-                toolbarButton(icon: "arrow.up.circle", label: "上传", action: onUpload)
-                    .disabled(!isConnected)
+            let isUploading = connectionService.transferPreparation?.direction == .upload
+            let isDownloading = connectionService.transferPreparation?.direction == .download
+            let isPreparing = connectionService.transferPreparation != nil
 
-                toolbarButton(icon: "arrow.down.circle", label: "下载", action: onDownload)
-                    .disabled(!isConnected)
+            HStack(spacing: 4) {
+                toolbarButton(icon: "arrow.up.circle", label: "上传", isLoading: isUploading, action: onUpload)
+                    .disabled(!isConnected || isPreparing)
+
+                toolbarButton(icon: "arrow.down.circle", label: "下载", isLoading: isDownloading, action: onDownload)
+                    .disabled(!isConnected || isPreparing)
 
                 toolbarButton(icon: "folder.badge.plus", label: "新建文件夹", action: onNewFolder)
 
@@ -126,17 +130,23 @@ public struct ToolbarView: View {
         return false
     }
 
-    private func toolbarButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+    private func toolbarButton(icon: String, label: String, isLoading: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 3) {
-                Image(systemName: icon)
-                    .font(.system(size: 17))
-                    .frame(height: 20)
-                Text(label)
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(height: 20)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 17))
+                        .frame(height: 20)
+                }
+                Text(isLoading ? "准备中..." : label)
                     .font(FerryFont.caption)
             }
             .frame(width: 56, height: 44)
-            .foregroundColor(theme.icon)
+            .foregroundColor(isLoading ? theme.accentColor : theme.icon)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

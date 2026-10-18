@@ -29,7 +29,8 @@ public enum DirectoryScanner {
     /// 递归扫描本地文件夹，展开为相对于 `targetRemoteDir` 的文件列表。
     public static func scanLocalDirectory(
         _ rootURL: URL,
-        targetRemoteDir: RemotePath
+        targetRemoteDir: RemotePath,
+        onProgress: (@Sendable (_ scannedCount: Int, _ currentItemName: String) -> Void)? = nil
     ) throws -> [ScannedFile] {
         var results: [ScannedFile] = []
         let fileManager = FileManager.default
@@ -44,7 +45,9 @@ public enum DirectoryScanner {
             let attrs = try? fileManager.attributesOfItem(atPath: rootURL.path)
             let size = attrs?[.size] as? Int64
             let targetPath = try targetRemoteDir.appending(component: rootURL.lastPathComponent)
-            return [ScannedFile(localURL: rootURL, remotePath: targetPath, size: size)]
+            let scanned = ScannedFile(localURL: rootURL, remotePath: targetPath, size: size)
+            onProgress?(1, rootURL.lastPathComponent)
+            return [scanned]
         }
 
         // 根目录是文件夹：创建目标子目录名并展开子内容
@@ -79,6 +82,7 @@ public enum DirectoryScanner {
 
                 let size = resourceValues.fileSize.map { Int64($0) }
                 results.append(ScannedFile(localURL: fileURL, remotePath: targetRemote, size: size))
+                onProgress?(results.count, fileURL.lastPathComponent)
             }
         }
 
@@ -91,7 +95,8 @@ public enum DirectoryScanner {
     public static func scanRemoteDirectory(
         _ remoteRoot: RemotePath,
         fileSystem: any RemoteFileSystem,
-        targetLocalDir: URL
+        targetLocalDir: URL,
+        onProgress: (@Sendable (_ scannedCount: Int, _ currentItemName: String) -> Void)? = nil
     ) async throws -> [ScannedFile] {
         var results: [ScannedFile] = []
 
@@ -101,7 +106,9 @@ public enum DirectoryScanner {
             let localURL = targetLocalDir.appendingPathComponent(
                 remoteRoot.lastComponent?.displayString() ?? "download"
             )
-            return [ScannedFile(localURL: localURL, remotePath: remoteRoot, size: rootItem.size)]
+            let scanned = ScannedFile(localURL: localURL, remotePath: remoteRoot, size: rootItem.size)
+            onProgress?(1, remoteRoot.lastComponent?.displayString() ?? "download")
+            return [scanned]
         }
 
         let folderName = remoteRoot.lastComponent?.displayString() ?? "folder"
@@ -111,7 +118,8 @@ public enum DirectoryScanner {
             currentRemote: remoteRoot,
             currentLocalDir: baseLocalDir,
             fileSystem: fileSystem,
-            results: &results
+            results: &results,
+            onProgress: onProgress
         )
 
         return results
@@ -121,7 +129,8 @@ public enum DirectoryScanner {
         currentRemote: RemotePath,
         currentLocalDir: URL,
         fileSystem: any RemoteFileSystem,
-        results: inout [ScannedFile]
+        results: inout [ScannedFile],
+        onProgress: (@Sendable (_ scannedCount: Int, _ currentItemName: String) -> Void)? = nil
     ) async throws {
         try Task.checkCancellation()
 
@@ -134,14 +143,17 @@ public enum DirectoryScanner {
 
             switch item.kind {
             case .directory:
+                onProgress?(results.count, name)
                 try await scanRemoteRecursive(
                     currentRemote: item.path,
                     currentLocalDir: localTarget,
                     fileSystem: fileSystem,
-                    results: &results
+                    results: &results,
+                    onProgress: onProgress
                 )
             case .file:
                 results.append(ScannedFile(localURL: localTarget, remotePath: item.path, size: item.size))
+                onProgress?(results.count, name)
             case .symbolicLink:
                 // 若为软链且目标是文件，纳入下载；若是目录，递归扫描（防成环由 RemoteFileSystem 兜住）
                 var mutableListing = listing
@@ -149,14 +161,17 @@ public enum DirectoryScanner {
                     if let target = res.resolved {
                         let targetItem = try? await fileSystem.stat(target)
                         if targetItem?.kind == RemoteItemKind.directory {
+                            onProgress?(results.count, name)
                             try await scanRemoteRecursive(
                                 currentRemote: target,
                                 currentLocalDir: localTarget,
                                 fileSystem: fileSystem,
-                                results: &results
+                                results: &results,
+                                onProgress: onProgress
                             )
                         } else if targetItem?.kind == RemoteItemKind.file {
                             results.append(ScannedFile(localURL: localTarget, remotePath: item.path, size: targetItem?.size))
+                            onProgress?(results.count, name)
                         }
                     }
                 }

@@ -55,6 +55,30 @@ public struct MainWindowView: View {
             // M4: 外部编辑“正在监视”状态条（v2.3 §381）
             ExternalEditMonitoringBanner()
 
+            // 传输准备中即时反馈条（防重复点击与提示长耗时目录扫描）
+            if let prep = connectionService.transferPreparation {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(prep.statusMessage)
+                        .font(FerryFont.captionBold)
+                        .foregroundColor(theme.accentColor)
+                    Spacer()
+                    Text("请稍候，任务即将启动...")
+                        .font(FerryFont.caption)
+                        .foregroundColor(theme.text2)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 7)
+                .background(theme.accentColor.opacity(0.1))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(theme.accentColor.opacity(0.25)),
+                    alignment: .bottom
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             // 主体区域：左侧栏 + 双栏列表
             HStack(spacing: 0) {
                 // 左侧栏（220px）

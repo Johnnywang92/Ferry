@@ -62,6 +62,34 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
     public var activeTransfer: ActiveTransferInfo?
     private var transferTask: Task<Void, Never>?
 
+    // 传输准备中状态（目录扫描与冲突检测中，给用户即时反馈防误重触）
+    public struct TransferPreparationState: Equatable, Sendable {
+        public enum Direction: String, Sendable {
+            case upload = "上传"
+            case download = "下载"
+        }
+        public let direction: Direction
+        public let totalItems: Int
+        public var scannedFilesCount: Int
+        public var currentScanningName: String?
+        public var statusMessage: String
+
+        public init(
+            direction: Direction,
+            totalItems: Int,
+            scannedFilesCount: Int = 0,
+            currentScanningName: String? = nil,
+            statusMessage: String
+        ) {
+            self.direction = direction
+            self.totalItems = totalItems
+            self.scannedFilesCount = scannedFilesCount
+            self.currentScanningName = currentScanningName
+            self.statusMessage = statusMessage
+        }
+    }
+    public var transferPreparation: TransferPreparationState?
+
     // App Nap 防节流令牌（v2.3 §312）
     private var appNapActivity: NSObjectProtocol?
 
@@ -499,14 +527,43 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
     public func uploadFiles(_ localURLs: [URL], onComplete: (@MainActor () -> Void)? = nil) {
         guard let remoteDir = currentRemotePath else { return }
         guard !localURLs.isEmpty else { return }
+        guard transferPreparation == nil else { return }
 
-        Task {
+        let hasDir = localURLs.contains(where: {
+            var isDir: ObjCBool = false
+            return FileManager.default.fileExists(atPath: $0.path, isDirectory: &isDir) && isDir.boolValue
+        })
+        let initialMsg = hasDir ? "正在扫描本地文件夹并准备上传..." : "正在准备上传..."
+
+        self.transferPreparation = TransferPreparationState(
+            direction: .upload,
+            totalItems: localURLs.count,
+            scannedFilesCount: 0,
+            statusMessage: initialMsg
+        )
+        self.isQueuePanelPresented = true
+
+        Task { [self] in
+            defer {
+                self.transferPreparation = nil
+            }
             var scannedFiles: [DirectoryScanner.ScannedFile] = []
-            for url in localURLs {
+            for (idx, url) in localURLs.enumerated() {
                 var isDir: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { continue }
                 if isDir.boolValue {
-                    if let scanned = try? DirectoryScanner.scanLocalDirectory(url, targetRemoteDir: remoteDir) {
+                    self.transferPreparation?.statusMessage = "正在扫描本地目录：\(url.lastPathComponent) (\(idx + 1)/\(localURLs.count))..."
+                    if let scanned = try? DirectoryScanner.scanLocalDirectory(
+                        url,
+                        targetRemoteDir: remoteDir,
+                        onProgress: { [weak self] count, name in
+                            Task { @MainActor [weak self] in
+                                self?.transferPreparation?.scannedFilesCount = count
+                                self?.transferPreparation?.currentScanningName = name
+                                self?.transferPreparation?.statusMessage = "已发现 \(count) 个文件（正在扫描：\(name)）..."
+                            }
+                        }
+                    ) {
                         scannedFiles.append(contentsOf: scanned)
                     }
                 } else {
@@ -515,11 +572,14 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
                     let targetName = url.lastPathComponent
                     if let targetRemote = try? PathResolver.child(of: remoteDir, name: Array(targetName.utf8)) {
                         scannedFiles.append(DirectoryScanner.ScannedFile(localURL: url, remotePath: targetRemote, size: size))
+                        self.transferPreparation?.scannedFilesCount = scannedFiles.count
                     }
                 }
             }
 
             guard !scannedFiles.isEmpty else { return }
+
+            self.transferPreparation?.statusMessage = "正在检查文件冲突（共 \(scannedFiles.count) 个文件）..."
 
             // 冲突探测（上传：检查目标 remotePath 在当前 remoteItems 中是否已存在）
             var finalUploadBatch: [DirectoryScanner.ScannedFile] = []
@@ -608,22 +668,52 @@ public final class ConnectionService: HostKeyTrustPrompt, KeyboardInteractiveRes
     public func downloadItems(_ items: [RemoteDisplayItem], to localDirectory: URL, onComplete: (@MainActor () -> Void)? = nil) {
         guard let connection = activeConnection else { return }
         guard !items.isEmpty else { return }
+        guard transferPreparation == nil else { return }
 
-        Task {
+        let hasDir = items.contains(where: { $0.isDirectory })
+        let initialMsg = hasDir ? "正在扫描远程文件夹并准备下载..." : "正在准备下载..."
+
+        self.transferPreparation = TransferPreparationState(
+            direction: .download,
+            totalItems: items.count,
+            scannedFilesCount: 0,
+            statusMessage: initialMsg
+        )
+        self.isQueuePanelPresented = true
+
+        Task { [self] in
+            defer {
+                self.transferPreparation = nil
+            }
             var scannedFiles: [DirectoryScanner.ScannedFile] = []
-            for item in items {
+            for (idx, item) in items.enumerated() {
                 if item.isDirectory {
+                    self.transferPreparation?.statusMessage = "正在扫描远程目录：\(item.name) (\(idx + 1)/\(items.count))..."
                     let destFolder = localDirectory.appendingPathComponent(item.name)
-                    if let scanned = try? await DirectoryScanner.scanRemoteDirectory(item.path, fileSystem: connection, targetLocalDir: destFolder) {
+                    if let scanned = try? await DirectoryScanner.scanRemoteDirectory(
+                        item.path,
+                        fileSystem: connection,
+                        targetLocalDir: destFolder,
+                        onProgress: { [weak self] count, name in
+                            Task { @MainActor [weak self] in
+                                self?.transferPreparation?.scannedFilesCount = count
+                                self?.transferPreparation?.currentScanningName = name
+                                self?.transferPreparation?.statusMessage = "已发现 \(count) 个文件（正在扫描：\(name)）..."
+                            }
+                        }
+                    ) {
                         scannedFiles.append(contentsOf: scanned)
                     }
                 } else {
                     let destination = localDirectory.appendingPathComponent(item.name)
                     scannedFiles.append(DirectoryScanner.ScannedFile(localURL: destination, remotePath: item.path, size: item.size))
+                    self.transferPreparation?.scannedFilesCount = scannedFiles.count
                 }
             }
 
             guard !scannedFiles.isEmpty else { return }
+
+            self.transferPreparation?.statusMessage = "正在检查文件冲突（共 \(scannedFiles.count) 个文件）..."
 
             // 冲突探测（下载：检查目标 localURL 在本地磁盘中是否已存在）
             var finalDownloadBatch: [DirectoryScanner.ScannedFile] = []

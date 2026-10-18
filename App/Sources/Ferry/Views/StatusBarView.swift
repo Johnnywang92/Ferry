@@ -55,7 +55,14 @@ public struct StatusBarView: View {
                     .font(FerryFont.monoCaption)
 
                     let summary = connectionService.queueSummary
-                    if summary.running > 0 {
+                    if let prep = connectionService.transferPreparation {
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.mini)
+                            Text(prep.statusMessage)
+                                .font(FerryFont.caption)
+                                .foregroundColor(theme.accentColor)
+                        }
+                    } else if summary.running > 0 {
                         HStack(spacing: 4) {
                             ProgressView().controlSize(.mini)
                             Text("\(summary.running) 项进行中")
